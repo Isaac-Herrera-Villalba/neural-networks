@@ -1,45 +1,40 @@
 # Makefile
 # -----------------------------------------------------------------------
 # Descripción:
-# Automatiza el flujo completo del proyecto **Linear Regression**.
-# Este proyecto implementa un sistema de **Regresión Lineal** (simple y múltiple)
-# desarrollado en Python, que genera automáticamente un **reporte en PDF**
-# con los resultados teóricos, matrices y ecuaciones calculadas.
+# Automatiza el flujo completo del proyecto **Neural Networks**.
 #
-# Estructura general del flujo:
-#   1. Crea un entorno virtual e instala dependencias necesarias (make env).
-#   2. Ejecuta el análisis definido en input.txt (make run).
-#   3. Compila el archivo LaTeX a PDF (make latex o make pdf).
-#   4. Visualiza el reporte (make view).
+# Este proyecto implementa los siguientes métodos clásicos de redes
+# neuronales (según la práctica y el PDF proporcionado):
 #
-# Incluye compatibilidad con datasets .csv, .xlsx y .ods, y genera un
-# reporte matemático completo con:
-#   - Modelo lineal general.
-#   - Derivadas parciales y ecuaciones normales.
-#   - Matrices (X, Xᵀ, XᵀX, Xᵀy, β).
-#   - Sustitución de valores y predicciones numéricas.
+#   - Perceptrón simple
+#   - Regla Delta (ADALINE)
+#   - Backpropagation (MLP)
 #
-# Dependencias gestionadas en requirements.txt
+# El sistema toma la configuración definida en `input.txt`,
+# carga datasets (.csv, .xlsx, .ods), entrena la red seleccionada
+# y genera automáticamente un **reporte en PDF** con todos los
+# cálculos paso a paso.
+#
+# Flujo general:
+#   1. Crear entorno virtual e instalar dependencias    → make env
+#   2. Ejecutar los experimentos definidos en input.txt → make run
+#   3. Compilar manualmente LaTeX (opcional)            → make latex
+#   4. Abrir el PDF final                               → make view
+#
+# Dependencias administradas en requirements.txt.
 # -----------------------------------------------------------------------
 
 PYTHON         = python3
 SRC_DIR        = src
-SRC_DIR_2      = core
-SRC_DIR_3      = data_extractor
-SRC_DIR_4      = regression
-SRC_DIR_5      = report
 OUT_DIR        = output
 INPUT_FILE     = input.txt
 MAIN_FILE      = $(SRC_DIR)/main.py
 PDF_READER     = okular
 PYTHON_MODULES = __pycache__
 
-LATEX_REPORT_NAME = reporte
-
-EXT           = ods
-
-DATASET       = ejemplo
-DATASET_PATH  = data/$(DATASET).$(EXT)
+# El PDF final es definido por el último bloque con REPORT= en input.txt
+# Para propósitos de compilación manual, se usa un nombre genérico:
+LATEX_REPORT_NAME = reporte_nn
 
 VENV_DIR      = .venv
 PYTHON_VENV   = $(VENV_DIR)/bin/python
@@ -48,7 +43,7 @@ PIP_VENV      = $(VENV_DIR)/bin/pip
 PDF_FILE      = $(OUT_DIR)/$(LATEX_REPORT_NAME).pdf
 TEX_FILE      = $(OUT_DIR)/$(LATEX_REPORT_NAME).tex
 
-.PHONY: all help env run latex pdf view clean full show_dataset
+.PHONY: all help env run latex pdf view clean full
 
 # -----------------------------------------------------------------------
 all: help
@@ -56,12 +51,12 @@ all: help
 help:
 	@echo "Comandos disponibles:"
 	@echo "  make env    -> Crea entorno virtual e instala dependencias"
-	@echo "  make run    -> Ejecuta la regresión lineal (genera .tex y PDF automático)"
+	@echo "  make run    -> Ejecuta el sistema de Redes Neuronales (genera PDF)"
 	@echo "  make latex  -> Compila manualmente el archivo .tex con LaTeX"
-	@echo "  make pdf    -> Alias de make run (genera reporte PDF desde input.txt)"
-	@echo "  make view   -> Abre el PDF resultante"
-	@echo "  make clean  -> Elimina archivos temporales y auxiliares de LaTeX"
-	@echo "  make full   -> Ejecuta todo el flujo (env + run + latex + view)"
+	@echo "  make pdf    -> Alias de 'make run'"
+	@echo "  make view   -> Abre el PDF generado"
+	@echo "  make clean  -> Elimina archivos temporales y auxiliares"
+	@echo "  make full   -> Ejecuta env + run + view"
 	@echo "---------------------------------------------------------------"
 
 # -----------------------------------------------------------------------
@@ -69,21 +64,21 @@ env:
 	@echo "=== Creando entorno virtual (.venv) ==="
 	@if [ ! -d "$(VENV_DIR)" ]; then \
 		$(PYTHON) -m venv $(VENV_DIR); \
-		echo "[OK] Entorno virtual creado en $(VENV_DIR)"; \
+		echo "[OK] Entorno virtual creado"; \
 	else \
-		echo "[INFO] Entorno virtual ya existe."; \
+		echo "[INFO] Ya existe .venv"; \
 	fi
 	@echo "=== Instalando dependencias ==="
 	$(PIP_VENV) install --upgrade pip >/dev/null
 	$(PIP_VENV) install -r requirements.txt
-	@echo "[OK] Dependencias instaladas correctamente."
+	@echo "[OK] Dependencias instaladas"
 
 # -----------------------------------------------------------------------
 run:
-	@echo "=== Ejecutando regresión lineal ==="
+	@echo "=== Ejecutando entrenamiento de Redes Neuronales ==="
 	mkdir -pv $(OUT_DIR)/
-	$(PYTHON_VENV) -m $(SRC_DIR).main $(INPUT_FILE)
-	@echo "[OK] Ejecución completada. Si el .tex fue generado, puedes compilarlo con 'make latex'"
+	$(PYTHON_VENV) $(MAIN_FILE)
+	@echo "[OK] Ejecución completada."
 
 pdf: run
 
@@ -93,7 +88,7 @@ latex:
 	@if [ -f "$(TEX_FILE)" ]; then \
 		cd $(OUT_DIR) && \
 		pdflatex -interaction=nonstopmode $(notdir $(TEX_FILE)) >/dev/null 2>&1; \
-		echo "[OK] Compilación LaTeX completada: $(PDF_FILE)"; \
+		echo "[OK] PDF recompilado: $(PDF_FILE)"; \
 	else \
 		echo "[ERROR] No se encontró $(TEX_FILE). Ejecuta primero 'make run'."; \
 	fi
@@ -104,18 +99,13 @@ view:
 	$(PDF_READER) $(PDF_FILE) &
 
 # -----------------------------------------------------------------------
-full: run latex view show_dataset
+full: env run view
 
 # -----------------------------------------------------------------------
 clean:
 	@echo "Eliminando archivos generados..."
 	rm -rf $(OUT_DIR)/
-	rm -rf $(SRC_DIR)/$(PYTHON_MODULES)
-	rm -rf $(SRC_DIR)/$(SRC_DIR_2)/$(PYTHON_MODULES)
-	rm -rf $(SRC_DIR)/$(SRC_DIR_2)/$(SRC_DIR_3)/$(PYTHON_MODULES)
-	rm -rf $(SRC_DIR)/$(SRC_DIR_4)/$(PYTHON_MODULES)
-	rm -rf $(SRC_DIR)/$(SRC_DIR_5)/$(PYTHON_MODULES)
-	
+	find $(SRC_DIR) -type d -name $(PYTHON_MODULES) -exec rm -rf {} +
 	rm -f data/.~lock.*
-	@echo "Limpieza completada."
+	@echo "[OK] Limpieza completada."
 

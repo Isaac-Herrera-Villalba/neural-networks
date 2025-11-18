@@ -1,8 +1,13 @@
 # ==============================================================
-# Proyecto: Linear Regression (Python 3.12+)
+# Proyecto: Neural Networks (Python 3.12+)
 # Descripción:
-#   Dependencias necesarias para ejecutar el sistema de regresión
-#   lineal (múltiple o simple) con generación automática de reportes PDF.
+#   Dependencias necesarias para ejecutar los métodos de:
+#     - Perceptrón
+#     - Regla Delta (ADALINE)
+#     - Backpropagation (MLP)
+#
+#   El sistema genera reportes matemáticos detallados en PDF
+#   siguiendo exactamente las fórmulas de la práctica.
 # ==============================================================
 
 # --- Núcleo numérico y manejo de datos ---
@@ -15,15 +20,18 @@ openpyxl >= 3.1.5     # Soporte para archivos .xlsx
 odfpy >= 1.4.1        # Soporte para archivos .ods
 
 # --- Generación de reportes y salida LaTeX ---
-pylatexenc >= 2.10    # Codificación segura de símbolos LaTeX
+pylatexenc >= 2.10    # Codificación segura de símbolos LaTeX para ecuaciones
 
 # --- Mejoras opcionales de salida en consola ---
 tabulate >= 0.9.0
 
 # ==============================================================
 # Notas:
-# - Todos los paquetes son compatibles con Python 3.12 (Debian 13+)
-# - No se requieren librerías de machine learning externas (scikit-learn, etc.)
-# - Para compilar los reportes, debe tener instalado LaTeX (pdflatex o xelatex).
+# - Todos los paquetes son compatibles con Python 3.12 (Debian 13+).
+# - Este proyecto NO utiliza frameworks de ML externos
+#   (no usa scikit-learn, TensorFlow o PyTorch).
+# - La generación de reportes requiere un entorno LaTeX funcional:
+#       pdflatex (TeX Live) o xelatex.
+# - El entrenamiento es completamente determinista y reproducible.
 # ==============================================================
 

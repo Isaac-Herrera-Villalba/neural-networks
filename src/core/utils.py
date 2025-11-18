@@ -2,85 +2,263 @@
 # -*- coding: utf-8 -*-
 
 """
- src/core/utils.py
- ------------------------------------------------------------
- Módulo de utilidades generales para operaciones auxiliares
- en el sistema de Regresión Lineal y otros módulos derivados
- (por ejemplo, proyectos previos de clasificación bayesiana).
+src/core/utils.py
+------------------------------------------------------------
+Descripción:
+Módulo de utilidades generales para el sistema de Redes
+Neuronales y módulos auxiliares relacionados.
 
- Incluye funciones de normalización de nombres de columnas,
- conversión segura de cadenas a valores booleanos y formateo
- textual de diccionarios en formato compacto.
+Incluye:
+- Normalización de nombres de columnas.
+- Normalización de símbolos lógicos (Unicode, ASCII, variantes
+  tipográficas y textuales).
+- Conversión robusta de valores booleanos.
+- Impresión compacta de diccionarios.
 
- Estas funciones no dependen de librerías externas y se
- utilizan en distintas etapas del procesamiento de datos
- y configuración del sistema.
- ------------------------------------------------------------
+Este módulo es consumido por:
+- src/core/config.py           (parser de input.txt)
+- src/core/data_extractor      (loader y preprocesamiento)
+- src/nn/                      (módulos perceptrón / delta / MLP)
+- src/report/                  (generación LaTeX)
+
+Este módulo garantiza que los símbolos lógicos presentes en:
+- columnas de .ods / .xlsx
+- parámetros X_COLS y Y_COLS en input.txt
+
+se conviertan a identificadores ASCII seguros sin modificar los
+archivos originales.
+------------------------------------------------------------
 """
 
 from __future__ import annotations
 from typing import Dict, Any
 
 
-def normalize_colnames(cols) -> list[str]:
-    """
-    Devuelve una lista de nombres de columnas normalizados.
+# ============================================================
+# === MAPA DE SÍMBOLOS LÓGICOS NORMALIZADOS ==================
+# ============================================================
 
-    En esta implementación, los nombres se devuelven sin
-    alteración, pero la función se mantiene como punto de
-    extensión para futuras normalizaciones (por ejemplo,
-    eliminación de espacios, acentos o símbolos).
+LOGIC_SYMBOL_MAP = {
+
+    # ===============================================================
+    # BICONDITIONAL  (↔, <->, <=>, ⇔, ≡, ⟺, ⟷)
+    # ===============================================================
+    "↔": "BICONDITIONAL",
+    "⇔": "BICONDITIONAL",
+    "⇿": "BICONDITIONAL",
+    "⟺": "BICONDITIONAL",
+    "⟷": "BICONDITIONAL",
+    "≡": "BICONDITIONAL",
+
+    "<->": "BICONDITIONAL",
+    "<=>": "BICONDITIONAL",
+    "<==>": "BICONDITIONAL",
+    "<-->": "BICONDITIONAL",
+
+    "iff": "BICONDITIONAL",
+    "equiv": "BICONDITIONAL",
+    "biimplication": "BICONDITIONAL",
+    "bi-implication": "BICONDITIONAL",
+    "bi_implication": "BICONDITIONAL",
+    "bimp": "BICONDITIONAL",
+    "eqv": "BICONDITIONAL",
+    "xnor": "BICONDITIONAL",
+
+    # ===============================================================
+    # XOR (⊕, ⊻, ^, exclusive-or)
+    # ===============================================================
+    "⊕": "XOR",
+    "⨁": "XOR",
+    "⊻": "XOR",
+    "^": "XOR",
+
+    "xor": "XOR",
+    "exor": "XOR",
+    "exclusive_or": "XOR",
+    "exclusive-or": "XOR",
+    "exclusive or": "XOR",
+
+    # ===============================================================
+    # AND (∧, &, &&, ⋀)
+    # ===============================================================
+    "∧": "AND",
+    "&": "AND",
+    "&&": "AND",
+    "⋀": "AND",
+
+    "and": "AND",
+    "logical_and": "AND",
+    "logical-and": "AND",
+    "logical and": "AND",
+
+    # ===============================================================
+    # OR (∨, |, ||, ⋁)
+    # ===============================================================
+    "∨": "OR",
+    "|": "OR",
+    "||": "OR",
+    "⋁": "OR",
+
+    "or": "OR",
+    "logical_or": "OR",
+    "logical-or": "OR",
+    "logical or": "OR",
+
+    # ===============================================================
+    # NOT (¬, ~, !, neg)
+    # ===============================================================
+    "¬": "NOT",
+    "~": "NOT",
+    "!": "NOT",
+
+    "not": "NOT",
+    "neg": "NOT",
+    "negation": "NOT",
+
+    # ===============================================================
+    # IMPLICATION  (→, ⇒, ⟹, ->, =>, -->)
+    # ===============================================================
+    "→": "IMPLIES",
+    "⇒": "IMPLIES",
+    "⟹": "IMPLIES",
+
+    "->": "IMPLIES",
+    "=>": "IMPLIES",
+    "-->": "IMPLIES",
+
+    "implies": "IMPLIES",
+    "implication": "IMPLIES",
+
+    # ===============================================================
+    # NAND
+    # ===============================================================
+    "↑": "NAND",
+    "nand": "NAND",
+    "!and": "NAND",
+    "not and": "NAND",
+
+    # ===============================================================
+    # NOR
+    # ===============================================================
+    "↓": "NOR",
+    "nor": "NOR",
+    "!or": "NOR",
+    "not or": "NOR",
+}
+
+
+# ============================================================
+# === FUNCIÓN: Normalización de símbolos lógicos ==============
+# ============================================================
+
+def normalize_logic_symbol(name: str) -> str:
+    """
+    Normaliza símbolos lógicos o etiquetas provenientes del dataset o input.txt,
+    convirtiéndolos a nombres ASCII seguros.
+
+    Ejemplos:
+        ↔     -> BICONDITIONAL
+        <=>   -> BICONDITIONAL
+        ⊕     -> XOR
+        ∧     -> AND
+        ¬     -> NOT
+        →     -> IMPLIES
 
     Parámetros
     ----------
-    cols : iterable
-        Colección de nombres de columnas.
-
-    Retorna
-    -------
-    list[str]
-        Lista con los nombres de columna procesados.
-    """
-    return list(cols)
-
-
-def parse_bool(s: str) -> bool:
-    """
-    Convierte una cadena de texto a su valor booleano equivalente.
-
-    Se interpreta como `True` si la cadena coincide (ignorando
-    mayúsculas y tildes) con alguno de los siguientes valores:
-    `"1"`, `"true"`, `"yes"`, `"y"`, `"t"`, `"si"`, `"sí"`.
-
-    Parámetros
-    ----------
-    s : str
-        Cadena de entrada a evaluar.
-
-    Retorna
-    -------
-    bool
-        Valor booleano interpretado a partir de la cadena.
-    """
-    return str(s).strip().lower() in {"1", "true", "yes", "y", "t", "si", "sí"}
-
-
-def dotted(d: Dict[str, Any]) -> str:
-    """
-    Devuelve una representación textual de un diccionario
-    en formato `clave=valor`, separando los pares por comas.
-
-    Parámetros
-    ----------
-    d : Dict[str, Any]
-        Diccionario de entrada.
+    name : str
+        Nombre original de la columna o parámetro.
 
     Retorna
     -------
     str
-        Cadena resultante con los pares formateados en
-        la forma `k=v, k=v, ...`.
+        Nombre ASCII seguro normalizado, o el original si no pertenece al mapa.
+    """
+    if not isinstance(name, str):
+        return name
+
+    cleaned = name.strip().lower()
+    cleaned = " ".join(cleaned.split())
+
+    # coincidencia exacta
+    if cleaned in LOGIC_SYMBOL_MAP:
+        return LOGIC_SYMBOL_MAP[cleaned]
+
+    # eliminar espacios internos
+    cleaned_no_space = cleaned.replace(" ", "")
+    if cleaned_no_space in LOGIC_SYMBOL_MAP:
+        return LOGIC_SYMBOL_MAP[cleaned_no_space]
+
+    # eliminar '-' y '_'
+    cleaned_simple = cleaned.replace("-", "").replace("_", "")
+    if cleaned_simple in LOGIC_SYMBOL_MAP:
+        return LOGIC_SYMBOL_MAP[cleaned_simple]
+
+    return name
+
+
+# ============================================================
+# === FUNCIÓN: Normalización de nombres de columnas ===========
+# ============================================================
+
+def normalize_colnames(cols) -> list[str]:
+    """
+    Normaliza nombres de columnas del dataset.
+
+    - Aplica normalización lógica si corresponde.
+    - Mantiene el nombre original si no es un símbolo lógico.
+    - Evita modificar el archivo .ods, solo actúa en memoria.
+
+    Parámetros
+    ----------
+    cols : iterable
+        Lista de columnas del DataFrame.
+
+    Retorna
+    -------
+    list[str]
+        Lista procesada de nombres.
+    """
+    normalized = []
+    for c in cols:
+        c2 = normalize_logic_symbol(str(c))
+        normalized.append(c2)
+    return normalized
+
+
+# ============================================================
+# === FUNCIÓN: Conversión robusta de booleanos ===============
+# ============================================================
+
+def parse_bool(s: str) -> bool:
+    """
+    Convierte cadena textual a booleano.
+
+    True si:
+        "1", "true", "yes", "y", "t", "si", "sí"
+
+    False en cualquier otro caso.
+    """
+    return str(s).strip().lower() in {"1", "true", "yes", "y", "t", "si", "sí"}
+
+
+# ============================================================
+# === FUNCIÓN: Impresión compacta de diccionarios ============
+# ============================================================
+
+def dotted(d: Dict[str, Any]) -> str:
+    """
+    Imprime un diccionario como: k=v, k=v, ...
+
+    Parámetros
+    ----------
+    d : Dict[str, Any]
+        Diccionario a procesar.
+
+    Retorna
+    -------
+    str
+        Formato compacto de pares clave-valor.
     """
     return ", ".join(f"{k}={v}" for k, v in d.items())
-# -------------------------------------------------------
 

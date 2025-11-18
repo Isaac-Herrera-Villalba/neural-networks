@@ -2,202 +2,209 @@
 # -*- coding: utf-8 -*-
 
 """
- src/report/report_latex.py
- ------------------------------------------------------------
- Módulo de utilidades para generar y compilar reportes en LaTeX
- a partir de los resultados de regresión lineal.
+src/report/report_latex.py
+------------------------------------------------------------
+Descripción:
+Módulo central para la generación del PDF final del proyecto
+de Redes Neuronales. Aquí se definen:
 
- Incluye funciones para:
-   - Construir matrices NumPy en formato LaTeX (bmatrix).
-   - Formatear números con punto decimal forzado.
-   - Crear tablas de vista previa de datasets.
-   - Renderizar el documento final en PDF.
+1. Plantilla LaTeX base:
+      - Preambulo moderno, con soporte matemático.
+      - Márgenes adecuados y salida profesional.
+      - Configuración para español.
 
- El sistema emplea `graphicx` + `\resizebox` para escalar matrices,
- y `\allowdisplaybreaks` para permitir saltos de página dentro de
- expresiones matemáticas extensas.
- ------------------------------------------------------------
+2. Utilidades de conversión:
+      - _fmt_number(): formateo numérico uniforme.
+      - _matrix_to_latex(): matrices pequeñas para pesos.
+      - dataset_preview_table(): tabla del dataset.
+
+3. Función principal render_pdf():
+      Toma un bloque LaTeX generado por:
+        - latex_perceptron.py
+        - latex_delta.py
+        - latex_backprop.py
+      y produce el PDF final.
+
+Este módulo NO realiza cálculos de redes neuronales.
+Solo formatea y renderiza.
+------------------------------------------------------------
 """
 
 from __future__ import annotations
-import subprocess
 from pathlib import Path
-from typing import List, Optional
+from typing import List
+import subprocess
 import numpy as np
 import pandas as pd
 
 
-# ======================================================================
-# === PLANTILLAS LaTeX BASE ============================================
-# ======================================================================
+# ============================================================
+# === PREÁMBULO LaTeX GENERAL ================================
+# ============================================================
 
-LATEX_PREAMBLE_ALL = r"""
+LATEX_PREAMBLE = r"""
 \documentclass[11pt]{article}
+
 \usepackage[margin=2.5cm]{geometry}
 \usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+
 \usepackage[spanish,es-noshorthands]{babel}
-\usepackage{graphicx}            % Ajuste de tamaño de matrices
-\usepackage{booktabs}            % Estilo de tablas
-\usepackage{amsmath}             % Entornos matemáticos
-\allowdisplaybreaks              % Permite cortes de página entre ecuaciones
-\usepackage{breqn}               % Ecuaciones largas
-\usepackage{microtype}           % Microajuste tipográfico
-\usepackage{ragged2e}
-\usepackage{siunitx}             % Formateo numérico
+\usepackage{microtype}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{bm}
+\usepackage{booktabs}
+
+\usepackage{graphicx}
+\usepackage{float}
+
+\usepackage{breqn}  % ecuaciones largas
+
+\usepackage{siunitx}
 \sisetup{
   output-decimal-marker = {.},
-  group-separator = {\,},
+  group-separator={\,},
   detect-all,
   locale = US
 }
+
+\usepackage{array}
+\usepackage{ragged2e}
+\usepackage{enumitem}
+
+\setlength{\parskip}{0.8em}
+\setlength{\parindent}{0pt}
+
 \begin{document}
 \RaggedRight
 """
 
-LATEX_POSTAMBLE_ALL = r"""
+LATEX_POSTAMBLE = r"""
 \end{document}
 """
 
 
-# ======================================================================
-# === FORMATEADORES ====================================================
-# ======================================================================
+# ============================================================
+# === UTILIDADES DE FORMATEO ================================
+# ============================================================
 
 def _fmt_number(x: float) -> str:
     """
-    Formatea un número a 6 decimales con punto decimal fijo.
-    Convierte automáticamente a string en caso de error.
+    Formatea un número a 6 decimales, garantizando punto decimal.
+
+    Ejemplo:
+        0.5 -> "0.500000"
+        1 -> "1.000000"
     """
     try:
         s = f"{float(x):.6f}"
     except Exception:
         s = str(x)
-    return s.replace(",", ".").replace("−", "-")
+    return s.replace(",", ".")
 
 
-def _matrix_to_latex(M: np.ndarray, max_rows: int = 12, max_cols: int = 12) -> str:
+def _matrix_to_latex(M: np.ndarray) -> str:
     """
-    Convierte una matriz NumPy en código LaTeX (entorno bmatrix).
+    Convierte una matriz NumPy a entorno bmatrix.
 
-    Parámetros
-    ----------
-    M : np.ndarray
-        Matriz a convertir.
-    max_rows : int
-        Número máximo de filas visibles.
-    max_cols : int
-        Número máximo de columnas visibles.
+    Se utiliza únicamente para pesos pequeños:
+    - Pesos capa oculta
+    - Pesos capa salida
 
-    Retorna
-    -------
-    str
-        Cadena LaTeX con el entorno bmatrix.
+    No se usa para cálculos matriciales grandes.
     """
-    r, c = M.shape
-    rows = min(r, max_rows)
-    cols = min(c, max_cols)
-
+    rows, cols = M.shape
     lines = []
     for i in range(rows):
-        vals = " & ".join(_fmt_number(M[i, j]) for j in range(cols))
-        if c > cols:
-            vals += " & \\cdots"
-        lines.append(vals + r" \\")
-    if r > rows:
-        lines.append(r"\vdots")
-
+        line = " & ".join(_fmt_number(M[i, j]) for j in range(cols))
+        lines.append(line + r" \\")
     return "\\begin{bmatrix}\n" + "\n".join(lines) + "\n\\end{bmatrix}"
 
 
-def dataset_preview_table(df: pd.DataFrame, max_rows: int = 15, max_cols: int = 8) -> str:
+def dataset_preview_table(df: pd.DataFrame, max_rows: int = 12, max_cols: int = 8) -> str:
     """
-    Genera una tabla de vista previa del dataset (truncada si excede los límites).
+    Genera tabla resumida del dataset en LaTeX.
 
-    Parámetros
-    ----------
-    df : pd.DataFrame
-        Dataset de entrada.
-    max_rows : int
-        Número máximo de filas visibles.
-    max_cols : int
-        Número máximo de columnas visibles.
-
-    Retorna
-    -------
-    str
-        Tabla LaTeX con encabezado, filas y nota de truncamiento si aplica.
+    Ideal para mostrar las entradas y salidas del perceptrón, Regla Delta o Backprop.
     """
-    rows, cols = df.shape
-    truncated = rows > max_rows or cols > max_cols
-
+    total_r, total_c = df.shape
     df_disp = df.iloc[:max_rows, :max_cols].copy()
-    df_disp.columns = [str(c).replace("_", "\\_") for c in df_disp.columns]
 
-    header_fmt = " ".join(["l"] * len(df_disp.columns))
-    lines = [
-        f"\\textit{{Dimensiones del dataset:}} ${rows}\\,\\text{{filas}} \\times {cols}\\,\\text{{columnas}}$\\\\[0.3em]",
-        "\\begin{tabular}{" + header_fmt + "}",
-        "\\toprule",
-        " & ".join(df_disp.columns) + " \\\\",
-        "\\midrule",
-    ]
+    # Escapar guiones bajos para LaTeX
+    df_disp.columns = [str(c).replace("_", r"\_") for c in df_disp.columns]
+
+    header_fmt = " ".join(["c"] * len(df_disp.columns))
+
+    lines = []
+    lines.append(
+        rf"\textit{{Dimensiones del dataset:}} ${total_r}\,\text{{filas}} \times {total_c}\,\text{{columnas}}$"
+    )
+    lines.append("\\begin{tabular}{" + header_fmt + "}")
+    lines.append("\\toprule")
+    lines.append(" & ".join(df_disp.columns) + r" \\")
+    lines.append("\\midrule")
 
     for _, row in df_disp.iterrows():
-        vals = [str(v).replace("_", "\\_") for v in row.values]
-        lines.append(" & ".join(vals) + " \\\\")
+        vals = [str(v).replace("_", r"\_") for v in row.values]
+        lines.append(" & ".join(vals) + r" \\")
 
     lines.append("\\bottomrule")
     lines.append("\\end{tabular}")
 
-    if truncated:
+    # mensaje si se truncó
+    if total_r > max_rows or total_c > max_cols:
         lines.append(
-            f"\\\\[0.3em]\\textit{{Nota: el dataset mostrado fue truncado a "
-            f"{max_rows} filas y {max_cols} columnas. "
-            f"El dataset completo contiene {rows} filas y {cols} columnas.}}"
-            "\\\\[0.3em]\\textit{Consulte el archivo original para ver la tabla completa.}"
+            r"\\[0.3em]\textit{Nota: la tabla ha sido truncada para visualización. "
+            r"Consulte el archivo original para ver todas las filas y columnas.}"
         )
 
     return "\n".join(lines)
 
 
-# ======================================================================
-# === RENDERIZACIÓN DE PDF =============================================
-# ======================================================================
-def render_all_instances_pdf(out_pdf: str, latex_block: str):
+# ============================================================
+# === FUNCIÓN PRINCIPAL DE RENDER ============================
+# ============================================================
+
+def render_pdf(output_pdf: str, latex_body: str):
     """
-    Genera un documento PDF con todas las instancias concatenadas,
-    compilando con pdflatex en modo silencioso.
+    Renderiza un documento LaTeX ensamblado a un PDF final.
 
-    - Ejecuta dos pasadas para resolver referencias.
-    - Oculta toda la salida interna de LaTeX.
-    - Muestra solo el resultado final (OK / WARN / ERROR).
+    Parámetros
+    ----------
+    output_pdf : str
+        Ruta de salida del PDF.
+    latex_body : str
+        Contenido LaTeX generado por report_nn_builder.py
+
+    Tareas:
+      1. Ensambla preámbulo + cuerpo + cierre.
+      2. Compila con pdflatex en modo silencioso.
+      3. Produce el archivo final.
+
+    Nota:
+      - Requiere tener pdflatex instalado en el sistema.
+      - Produce un archivo .tex junto al PDF para depuración.
     """
-    from subprocess import run, DEVNULL, PIPE, STDOUT
+    out = Path(output_pdf)
+    out.parent.mkdir(parents=True, exist_ok=True)
 
-    out_path = Path(out_pdf)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    tex_path = out_path.with_suffix(".tex")
+    tex_path = out.with_suffix(".tex")
+    tex_data = LATEX_PREAMBLE + latex_body + LATEX_POSTAMBLE
+    tex_path.write_text(tex_data, encoding="utf-8")
 
-    tex_content = LATEX_PREAMBLE_ALL + latex_block + LATEX_POSTAMBLE_ALL
-    tex_path.write_text(tex_content, encoding="utf-8")
-
-    success = False
-    for i in range(2):  # dos pasadas
-        result = run(
+    # Ejecutar pdflatex dos veces
+    for _ in range(2):
+        proc = subprocess.run(
             ["pdflatex", "-interaction=nonstopmode", tex_path.name],
-            cwd=tex_path.parent,
-            stdout=DEVNULL,  # <── no imprime salida de LaTeX
-            stderr=STDOUT,
+            cwd=out.parent,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.STDOUT,
         )
-        if result.returncode != 0:
-            print(f"[ERROR] Falla en compilación LaTeX (pasada {i+1}).")
-            success = False
-            break
-        success = True
+        if proc.returncode != 0:
+            print("[ERROR] Falló la compilación LaTeX.")
+            return
 
-    pdf_path = out_path.parent / tex_path.with_suffix(".pdf").name
-    if success and pdf_path.exists():
-        print(f"[OK] Reporte PDF generado exitosamente en: {pdf_path}")
-    else:
-        print(f"[WARN] No se pudo generar el PDF; revisa output/reporte.log si existe.")
+    print(f"[OK] PDF generado en: {out}")
 

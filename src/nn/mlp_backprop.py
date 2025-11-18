@@ -1,639 +1,272 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
 """
 src/nn/mlp_backprop.py
 ------------------------------------------------------------
-Descripción general
-------------------------------------------------------------
-Implementación de un Perceptrón Multicapa (MLP) con una capa oculta,
-entrenado mediante el algoritmo de **Backpropagation**, siguiendo las
-fórmulas y el esquema conceptual presentados en el PDF de
-"Neural Networks".
+Descripción:
+Implementación de un Perceptrón Multicapa (MLP) con aprendizaje
+mediante Backpropagation EXACTAMENTE como se describe en la
+presentación de Redes Neuronales entregada en el PDF.
 
-Modelo teórico (según la presentación)
-------------------------------------------------------------
-- El MLP se compone de:
+Arquitectura soportada:
+    - 1 capa oculta (neuronas configurables)
+    - 1 neurona de salida
+    - Activación sigmoide en TODAS las neuronas
 
-    * Capa de entrada: vector x = (x_1, ..., x_n).
-    * Capa oculta: neuronas con activación sigmoide.
-    * Capa de salida: neuronas también con activación sigmoide.
+El entrenamiento es ON-LINE (patrón por patrón), siguiendo:
 
-- Se usa la función sigmoide clásica:
+    Forward-pass:
+        net_j = Σ (w_ji * x_i)
+        y_j   = sigmoid(net_j)
 
-        σ(net) = 1 / (1 + e^{-net})
+    Capa de salida:
+        δ_k = (t_k - y_k) * y_k * (1 - y_k)
 
-- La salida de la red para un patrón x se denota z = (z_1, ..., z_m),
-  y el vector de objetivos asociados es t = (t_1, ..., t_m).
+    Capa oculta:
+        δ_j = y_j(1 - y_j) Σ_k( δ_k * w_jk )
 
-- Función de error (por patrón):
+    Actualización:
+        w_ji(new) = w_ji(old) + η * δ_j * x_i
+        w_kj(new) = w_kj(old) + η * δ_k * y_j
 
-        E = Σ_i 1/2 (t_i - z_i)^2
+El módulo devuelve toda la traza completa:
+    - nets, activaciones
+    - deltas
+    - errores
+    - actualizaciones de pesos
+    - pesos antes/después
+    - historial por época y por patrón
 
-  (es decir, suma de errores cuadráticos por neurona de salida).
-
-- Derivadas parciales para la capa de salida (según el PDF):
-
-        ∂E/∂v_i = (z_i − t_i) · z_i · (1 − z_i) · y_i
-
-  donde:
-    - v_i    : peso conectado a la neurona de salida i,
-    - z_i    : salida de la neurona de salida i,
-    - t_i    : objetivo correspondiente,
-    - y_i    : salida de la neurona de la capa oculta que alimenta a v_i.
-
-- Derivadas parciales para la primera capa oculta (según el PDF):
-
-        ∂E/∂w_i = ( Σ_j ∂E/∂y_j ) · y_i · (1 − y_i) · x_i
-
-  donde:
-    - w_i    : peso conectado a la neurona de la capa oculta,
-    - y_i    : salida de la neurona de la capa oculta,
-    - x_i    : entrada correspondiente,
-    - Σ_j    : suma de los términos propagados desde la capa de salida.
-
-- Regla de actualización general:
-
-        v_i ← v_i − η ∂E/∂v_i
-        w_i ← w_i − η ∂E/∂w_i
-
-  donde η es la tasa de aprendizaje.
-
-Objetivo de este módulo
-------------------------------------------------------------
-Este archivo implementa:
-
-  - Una clase de configuración `MLPConfig`, para especificar:
-      * tasa de aprendizaje,
-      * número de épocas,
-      * tamaño de la capa oculta,
-      * umbral de error para detener el entrenamiento, etc.
-
-  - Una estructura `BackpropTrainingStep` que registra los valores
-    relevantes de cada actualización de pesos (nets, salidas, deltas,
-    pesos antes y después), útil para construir posteriormente tablas
-    y explicaciones en LaTeX que sigan la lógica del PDF.
-
-  - Una clase `MLPBackprop` que implementa:
-      * inicialización de pesos para la capa oculta y de salida,
-      * propagación hacia adelante (forward pass),
-      * propagación hacia atrás del error (backward pass),
-      * actualización de pesos patrón a patrón, conforme a:
-
-            v_ij ← v_ij − η δ_k y_j
-            w_ji ← w_ji − η δ_j x_i
-
-        donde δ_k y δ_j son las “señales de error” de salida y de la
-        capa oculta, respectivamente, definidas de acuerdo con las
-        derivadas parciales del PDF.
-
-No se utilizan matrices ni soluciones cerradas al estilo de la
-regresión lineal; el algoritmo se implementa como un proceso
-iterativo paso a paso, fiel al enfoque de Backpropagation del curso.
+Consumido por:
+    - src/main.py
+    - src/report/report_nn_builder.py
 ------------------------------------------------------------
 """
 
 from __future__ import annotations
-
-from dataclasses import dataclass
-from typing import List, Optional, Sequence, Tuple
-
+from typing import List, Dict, Any
 import numpy as np
 
 
 # ============================================================
-# === CONFIGURACIÓN DEL MLP ==================================
+# === Funciones auxiliares ===================================
 # ============================================================
 
-@dataclass
-class MLPConfig:
+def sigmoid(x: float) -> float:
+    """Función sigmoide estándar."""
+    return 1.0 / (1.0 + np.exp(-x))
+
+
+def sigmoid_derivative(y: float) -> float:
+    """Derivada de la sigmoide usando la salida y."""
+    return y * (1 - y)
+
+
+# ============================================================
+# === Contenedor de resultados ===============================
+# ============================================================
+
+class BackpropResult:
     """
-    Parámetros de configuración para el entrenamiento de un MLP
-    mediante Backpropagation.
+    Contenedor completo del entrenamiento MLP.
 
-    Atributos
-    ---------
-    n_hidden : int
-        Número de neuronas en la capa oculta.
+    Atributos:
+    ----------
+    epochs : int
+        Número real de épocas ejecutadas.
 
+    W_input_hidden : np.ndarray
+        Pesos finales entre entrada y capa oculta.
+
+    W_hidden_output : np.ndarray
+        Pesos finales entre capa oculta y salida.
+
+    history : List[Dict]
+        Registro completo para LaTeX:
+
+        [
+          {
+            'epoch': n,
+            'pattern_logs': [
+                {
+                  'x': [...],
+                  'target': y,
+                  'net_hidden': [...],
+                  'y_hidden': [...],
+                  'net_out': valor,
+                  'y_out': valor,
+                  'delta_out': valor,
+                  'delta_hidden': [...],
+                  'delta_w_ih': matriz,
+                  'delta_w_ho': vector,
+                  'w_ih_before': matriz,
+                  'w_ho_before': vector,
+                  'w_ih_after': matriz,
+                  'w_ho_after': vector
+                }
+            ],
+            'mse': valor
+          }
+        ]
+    """
+
+    def __init__(self,
+                 epochs: int,
+                 W_input_hidden: np.ndarray,
+                 W_hidden_output: np.ndarray,
+                 history: List[Dict[str, Any]]):
+
+        self.epochs = epochs
+        self.W_input_hidden = W_input_hidden
+        self.W_hidden_output = W_hidden_output
+        self.history = history
+
+
+# ============================================================
+# === Entrenamiento BACKPROPAGATION ==========================
+# ============================================================
+
+def train_backprop(
+    X: np.ndarray,
+    Y: np.ndarray,
+    hidden_neurons: int = 2,
+    learning_rate: float = 0.5,
+    max_epochs: int = 10000,
+    error_threshold: float = 0.01,
+    w_init_ih: np.ndarray | None = None,
+    w_init_ho: np.ndarray | None = None
+) -> BackpropResult:
+    """
+    Entrena un MLP usando Backpropagation EXACTO del PDF.
+
+    Parámetros
+    ----------
+    X : np.ndarray (n_patterns × n_features)
+    Y : np.ndarray (n_patterns,)
+    hidden_neurons : int
+        Número de neuronas ocultas (configurable).
     learning_rate : float
-        Tasa de aprendizaje η utilizada en las reglas de actualización
-        de pesos:
-
-            v_ij ← v_ij − η ∂E/∂v_ij
-            w_ji ← w_ji − η ∂E/∂w_ji
-
     max_epochs : int
-        Número máximo de épocas de entrenamiento.
-
     error_threshold : float
-        Umbral para la suma (promedio) de errores por patrón. Si el
-        error medio en una época desciende por debajo de este valor,
-        el entrenamiento se detiene anticipadamente.
-
-    random_state : Optional[int]
-        Semilla opcional para la inicialización reproducible de pesos.
-    """
-    n_hidden: int = 2
-    learning_rate: float = 0.5
-    max_epochs: int = 5000
-    error_threshold: float = 1e-2
-    random_state: Optional[int] = None
-
-
-# ============================================================
-# === REGISTRO DE ENTRENAMIENTO ==============================
-# ============================================================
-
-@dataclass
-class BackpropTrainingStep:
-    """
-    Registro detallado de una actualización de pesos en el MLP.
-
-    Esta estructura permite documentar, para cada patrón y en cada
-    época, el flujo esencial del algoritmo de backpropagation:
-
-      - entrada x
-      - nets y salidas de capa oculta y de salida
-      - vectores de error y deltas
-      - pesos antes y después de la actualización
-
-    Atributos
-    ---------
-    epoch : int
-        Época a la que pertenece este paso.
-
-    pattern_index : int
-        Índice del patrón dentro de la época.
-
-    x : np.ndarray
-        Vector de entrada (sin bias).
-
-    target : np.ndarray
-        Vector objetivo t para este patrón.
-
-    net_hidden : np.ndarray
-        Valores netos de la capa oculta antes de la sigmoide.
-
-    out_hidden : np.ndarray
-        Salidas de la capa oculta después de aplicar la función
-        sigmoide. No incluye el bias; el bias se maneja aparte.
-
-    net_output : np.ndarray
-        Nets de la capa de salida.
-
-    out_output : np.ndarray
-        Salidas de la capa de salida (z).
-
-    delta_output : np.ndarray
-        Señales de error de la capa de salida, equivalentes a:
-
-            δ_k = (z_k - t_k) z_k (1 - z_k)
-
-    delta_hidden : np.ndarray
-        Señales de error de la capa oculta, equivalentes (conceptualmente)
-        a la fórmula del PDF en términos de ∂E/∂y_j y derivadas sigmoide.
-
-    weights_input_hidden_before : np.ndarray
-        Pesos de la capa entrada→oculta antes de la actualización.
-
-    weights_input_hidden_after : np.ndarray
-        Pesos de la capa entrada→oculta después de la actualización.
-
-    weights_hidden_output_before : np.ndarray
-        Pesos de la capa oculta→salida antes de la actualización.
-
-    weights_hidden_output_after : np.ndarray
-        Pesos de la capa oculta→salida después de la actualización.
-
-    error_scalar : float
-        Error escalar del patrón: E = Σ 1/2 (t_k - z_k)^2.
-    """
-    epoch: int
-    pattern_index: int
-    x: np.ndarray
-    target: np.ndarray
-    net_hidden: np.ndarray
-    out_hidden: np.ndarray
-    net_output: np.ndarray
-    out_output: np.ndarray
-    delta_output: np.ndarray
-    delta_hidden: np.ndarray
-    weights_input_hidden_before: np.ndarray
-    weights_input_hidden_after: np.ndarray
-    weights_hidden_output_before: np.ndarray
-    weights_hidden_output_after: np.ndarray
-    error_scalar: float
-
-
-# ============================================================
-# === FUNCIONES AUXILIARES ===================================
-# ============================================================
-
-def _sigmoid(net: np.ndarray) -> np.ndarray:
-    """
-    Función de activación sigmoide aplicada elemento a elemento:
-
-        σ(net) = 1 / (1 + e^{-net})
-
-    Parámetros
-    ----------
-    net : np.ndarray
-        Arreglo de nets (capa oculta o de salida).
+    w_init_ih : pesos iniciales input→hidden (opcional)
+    w_init_ho : pesos iniciales hidden→output (opcional)
 
     Retorna
     -------
-    np.ndarray
-        Arreglo con σ(net) aplicado a cada componente.
-    """
-    return 1.0 / (1.0 + np.exp(-net))
-
-
-def _sigmoid_derivative(out: np.ndarray) -> np.ndarray:
-    """
-    Derivada de la sigmoide en función de su propia salida:
-
-        dσ/dnet = σ(net) (1 − σ(net))
-
-    pero expresado como:
-
-        σ'(out) = out (1 − out)
-
-    Parámetros
-    ----------
-    out : np.ndarray
-        Salidas de una capa (ya con sigmoide aplicada).
-
-    Retorna
-    -------
-    np.ndarray
-        Derivadas dσ/dnet evaluadas en cada componente.
-    """
-    return out * (1.0 - out)
-
-
-# ============================================================
-# === CLASE PRINCIPAL: MLP CON BACKPROP ======================
-# ============================================================
-
-class MLPBackprop:
-    """
-    Implementación de un MLP con una capa oculta, entrenado mediante
-    Backpropagation siguiendo la formulación del PDF:
-
-      - Unidades sigmoide en capas oculta y de salida.
-      - Función de error E = Σ 1/2 (t_i - z_i)^2.
-      - Derivadas parciales:
-
-            ∂E/∂v_i = (z_i − t_i) z_i (1 − z_i) y_i
-            ∂E/∂w_i = ( Σ_j ∂E/∂y_j ) y_i (1 − y_i) x_i
-
-      - Actualización de cada peso:
-
-            v_i ← v_i − η ∂E/∂v_i
-            w_i ← w_i − η ∂E/∂w_i
-
-    La implementación no utiliza álgebra matricial en el informe,
-    pero internamente representa los pesos como arreglos NumPy
-    (conceptualmente equivalentes a matrices) para facilitar los
-    cálculos numéricos.
+    BackpropResult
     """
 
-    def __init__(
-        self,
-        n_inputs: int,
-        n_outputs: int,
-        config: Optional[MLPConfig] = None,
-    ) -> None:
-        """
-        Inicializa la arquitectura del MLP:
-
-          - n_inputs  : número de atributos de entrada.
-          - n_hidden  : tomado de config.n_hidden.
-          - n_outputs : número de neuronas de salida.
-
-        Se añaden biases explícitamente:
-          - Pesos entrada→oculta: shape (n_hidden, n_inputs + 1)
-              (la última columna corresponde al bias para cada neurona oculta)
-          - Pesos oculta→salida:  shape (n_outputs, n_hidden + 1)
-              (la última columna corresponde al bias en la capa de salida)
-        """
-        if n_inputs <= 0:
-            raise ValueError("n_inputs debe ser un entero positivo.")
-        if n_outputs <= 0:
-            raise ValueError("n_outputs debe ser un entero positivo.")
-
-        self.config: MLPConfig = config or MLPConfig()
-        if self.config.n_hidden <= 0:
-            raise ValueError("n_hidden (en MLPConfig) debe ser un entero positivo.")
-
-        self.n_inputs: int = n_inputs
-        self.n_hidden: int = self.config.n_hidden
-        self.n_outputs: int = n_outputs
-
-        # Inicialización de pesos
-        if self.config.random_state is not None:
-            rng = np.random.default_rng(self.config.random_state)
-            self.weights_input_hidden: np.ndarray = rng.uniform(
-                -0.05, 0.05, size=(self.n_hidden, self.n_inputs + 1)
-            )
-            self.weights_hidden_output: np.ndarray = rng.uniform(
-                -0.05, 0.05, size=(self.n_outputs, self.n_hidden + 1)
-            )
-        else:
-            # Inicialización fija sencilla (p. ej., 0.2) como punto de partida
-            self.weights_input_hidden = np.full(
-                shape=(self.n_hidden, self.n_inputs + 1),
-                fill_value=0.2,
-                dtype=float,
-            )
-            self.weights_hidden_output = np.full(
-                shape=(self.n_outputs, self.n_hidden + 1),
-                fill_value=0.2,
-                dtype=float,
-            )
-
-        # Historial completo de pasos de entrenamiento
-        self.training_history: List[BackpropTrainingStep] = []
+    n_patterns, n_features = X.shape
 
     # --------------------------------------------------------
-    # FORWARD PASS
+    # Inicialización de pesos
     # --------------------------------------------------------
+    if w_init_ih is None:
+        W_ih = np.random.uniform(-0.5, 0.5, (hidden_neurons, n_features))
+    else:
+        W_ih = np.array(w_init_ih, dtype=float)
 
-    def _forward(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """
-        Propagación hacia adelante para un solo patrón.
+    if w_init_ho is None:
+        W_ho = np.random.uniform(-0.5, 0.5, hidden_neurons)
+    else:
+        W_ho = np.array(w_init_ho, dtype=float)
 
-        Pasos:
-          1) Extender la entrada con bias: x_ext = [x_1, ..., x_n, 1].
-          2) Calcular nets de la capa oculta:
-                net_hidden_j = Σ_i w_ji x_ext_i
-          3) Aplicar sigmoide:
-                out_hidden_j = σ(net_hidden_j)
-          4) Extender out_hidden con bias: y_ext = [y_1, ..., y_h, 1].
-          5) Calcular nets de la capa de salida:
-                net_output_k = Σ_j v_kj y_ext_j
-          6) Aplicar sigmoide:
-                out_output_k = σ(net_output_k)
+    history = []
 
-        Parámetros
-        ----------
-        x : np.ndarray
-            Vector de entrada (sin bias), shape (n_inputs,).
+    # ========================================================
+    # Entrenamiento por épocas
+    # ========================================================
+    for epoch in range(1, max_epochs + 1):
 
-        Retorna
-        -------
-        Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
-            (net_hidden, out_hidden, net_output, out_output)
-        """
-        if x.shape[0] != self.n_inputs:
-            raise ValueError(
-                f"Se esperaban {self.n_inputs} entradas, pero se recibieron {x.shape[0]}."
-            )
+        pattern_logs = []
+        squared_errors = []
 
-        # 1) Entrada extendida con bias
-        x_ext = np.concatenate([x.astype(float), np.array([1.0])])  # shape (n_inputs + 1,)
+        for i in range(n_patterns):
 
-        # 2) Nets de capa oculta
-        #    net_hidden_j = Σ_i w_ji x_ext_i
-        net_hidden = self.weights_input_hidden @ x_ext  # shape (n_hidden,)
+            x = X[i]
+            target = Y[i]
 
-        # 3) Salidas de capa oculta
-        out_hidden = _sigmoid(net_hidden)               # shape (n_hidden,)
+            # ------------------------------------------------
+            # 1. Forward pass
+            # ------------------------------------------------
 
-        # 4) Extender salidas ocultas con bias
-        hidden_ext = np.concatenate([out_hidden, np.array([1.0])])  # (n_hidden + 1,)
+            # Capa oculta
+            net_hidden = W_ih @ x               # vector
+            y_hidden = np.array([sigmoid(n) for n in net_hidden])
 
-        # 5) Nets de salida
-        net_output = self.weights_hidden_output @ hidden_ext  # shape (n_outputs,)
+            # Capa de salida (una sola neurona)
+            net_out = np.dot(W_ho, y_hidden)
+            y_out = sigmoid(net_out)
 
-        # 6) Salidas de salida
-        out_output = _sigmoid(net_output)                     # shape (n_outputs,)
+            # ------------------------------------------------
+            # 2. Cálculo de errores / deltas
+            # ------------------------------------------------
+            error = target - y_out
+            squared_errors.append(error**2)
 
-        return net_hidden, out_hidden, net_output, out_output
+            # δ_k (capa de salida)
+            delta_out = error * sigmoid_derivative(y_out)
 
-    # --------------------------------------------------------
-    # BACKWARD PASS (CÁLCULO DE DELTAS)
-    # --------------------------------------------------------
+            # δ_j (capa oculta)
+            delta_hidden = sigmoid_derivative(y_hidden) * (delta_out * W_ho)
 
-    def _backward(
-        self,
-        x: np.ndarray,
-        target: np.ndarray,
-        net_hidden: np.ndarray,
-        out_hidden: np.ndarray,
-        net_output: np.ndarray,
-        out_output: np.ndarray,
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Aplica las fórmulas de backpropagation para un patrón:
+            # ------------------------------------------------
+            # 3. Cálculo de variaciones de pesos
+            # ------------------------------------------------
+            delta_W_ho = learning_rate * delta_out * y_hidden
+            delta_W_ih = learning_rate * delta_hidden.reshape(-1, 1) @ x.reshape(1, -1)
 
-          - Capa de salida:
-                δ_k = (z_k − t_k) z_k (1 − z_k)
+            w_ih_before = W_ih.copy()
+            w_ho_before = W_ho.copy()
 
-          - Capa oculta:
-                δ_j = ( Σ_k δ_k v_kj ) y_j (1 − y_j)
+            # Actualizar pesos
+            W_ho = W_ho + delta_W_ho
+            W_ih = W_ih + delta_W_ih
 
-        donde v_kj son los pesos de la capa oculta→salida SIN contar
-        el bias (es decir, solo las conexiones desde neuronas ocultas).
+            w_ih_after = W_ih.copy()
+            w_ho_after = W_ho.copy()
 
-        Parámetros
-        ----------
-        x : np.ndarray
-            Vector de entrada (sin bias).
+            # Registro del patrón
+            pattern_logs.append({
+                "x": x.tolist(),
+                "target": float(target),
+                "net_hidden": net_hidden.tolist(),
+                "y_hidden": y_hidden.tolist(),
+                "net_out": float(net_out),
+                "y_out": float(y_out),
+                "delta_out": float(delta_out),
+                "delta_hidden": delta_hidden.tolist(),
+                "delta_w_ih": delta_W_ih.tolist(),
+                "delta_w_ho": delta_W_ho.tolist(),
+                "w_ih_before": w_ih_before.tolist(),
+                "w_ho_before": w_ho_before.tolist(),
+                "w_ih_after": w_ih_after.tolist(),
+                "w_ho_after": w_ho_after.tolist()
+            })
 
-        target : np.ndarray
-            Vector objetivo t_k para el patrón.
+        # --------------------------------------------------------
+        # Error de la época
+        # --------------------------------------------------------
+        mse = float(np.mean(squared_errors))
 
-        net_hidden : np.ndarray
-            Nets de la capa oculta (no se usan directamente aquí,
-            pero se incluyen por coherencia con la firma).
+        history.append({
+            "epoch": epoch,
+            "pattern_logs": pattern_logs,
+            "mse": mse
+        })
 
-        out_hidden : np.ndarray
-            Salidas de la capa oculta.
-
-        net_output : np.ndarray
-            Nets de la capa de salida.
-
-        out_output : np.ndarray
-            Salidas de la capa de salida (z_k).
-
-        Retorna
-        -------
-        Tuple[np.ndarray, np.ndarray]
-            (delta_output, delta_hidden)
-        """
-        # δ_k = (z_k − t_k) z_k (1 − z_k)
-        diff = out_output - target
-        delta_output = diff * _sigmoid_derivative(out_output)  # shape (n_outputs,)
-
-        # Para la capa oculta:
-        # δ_j = ( Σ_k δ_k v_kj ) y_j (1 − y_j)
-        # NOTA: v_kj son los pesos que conectan la neurona oculta j con
-        #       la neurona de salida k. Excluimos la columna de bias.
-        v_no_bias = self.weights_hidden_output[:, :-1]  # shape (n_outputs, n_hidden)
-        # Σ_k δ_k v_kj   →   vector shape (n_hidden,)
-        propagated = delta_output @ v_no_bias           # (1 x n_outputs) * (n_outputs x n_hidden)
-        delta_hidden = propagated * _sigmoid_derivative(out_hidden)
-
-        return delta_output, delta_hidden
+        # criterio de paro
+        if mse <= error_threshold:
+            break
 
     # --------------------------------------------------------
-    # ENTRENAMIENTO
+    # Retorno del resultado
     # --------------------------------------------------------
-
-    def fit(self, X: np.ndarray, T: np.ndarray) -> List[BackpropTrainingStep]:
-        """
-        Entrena el MLP mediante Backpropagation, usando las fórmulas
-        del PDF para las derivadas parciales y la actualización
-        de pesos.
-
-        Parámetros
-        ----------
-        X : np.ndarray
-            Matriz de entrada de shape (n_patrones, n_inputs).
-
-        T : np.ndarray
-            Matriz de objetivos de shape (n_patrones, n_outputs).
-
-        Retorna
-        -------
-        List[BackpropTrainingStep]
-            Historial completo de pasos de entrenamiento.
-        """
-        if X.ndim != 2:
-            raise ValueError("X debe ser una matriz 2D.")
-        if T.ndim != 2:
-            raise ValueError("T debe ser una matriz 2D.")
-        n_patrones, n_inputs = X.shape
-        n_patrones_T, n_outputs = T.shape
-
-        if n_inputs != self.n_inputs:
-            raise ValueError(
-                f"n_inputs en la red = {self.n_inputs}, pero X tiene {n_inputs} columnas."
-            )
-        if n_outputs != self.n_outputs:
-            raise ValueError(
-                f"n_outputs en la red = {self.n_outputs}, pero T tiene {n_outputs} columnas."
-            )
-        if n_patrones != n_patrones_T:
-            raise ValueError(
-                "Número de patrones de X y T no coincide: "
-                f"{n_patrones} vs {n_patrones_T}."
-            )
-
-        eta = self.config.learning_rate
-        self.training_history.clear()
-
-        for epoch in range(self.config.max_epochs):
-            epoch_errors: List[float] = []
-
-            for idx in range(n_patrones):
-                x_vec = X[idx, :].astype(float)
-                t_vec = T[idx, :].astype(float)
-
-                # -- Pesos antes de la actualización (copias para el registro) --
-                w_in_hid_before = self.weights_input_hidden.copy()
-                w_hid_out_before = self.weights_hidden_output.copy()
-
-                # 1) FORWARD
-                net_h, out_h, net_o, out_o = self._forward(x_vec)
-
-                # Error escalar para el patrón: E = Σ 1/2 (t_k - z_k)^2
-                error_vec = t_vec - out_o
-                E_pattern = 0.5 * float(np.sum(error_vec ** 2))
-                epoch_errors.append(E_pattern)
-
-                # 2) BACKWARD: cálculo de deltas
-                delta_out, delta_hid = self._backward(
-                    x=x_vec,
-                    target=t_vec,
-                    net_hidden=net_h,
-                    out_hidden=out_h,
-                    net_output=net_o,
-                    out_output=out_o,
-                )
-
-                # 3) ACTUALIZACIÓN DE PESOS
-                #    Capa oculta→salida:
-                #       v_ij ← v_ij − η δ_k y_j
-                #    donde y_j son salidas ocultas o bias correspondiente.
-                hidden_ext = np.concatenate([out_h, np.array([1.0])])  # (n_hidden + 1,)
-                # Para cada neurona de salida k, y cada peso j:
-                for k in range(self.n_outputs):
-                    for j in range(self.n_hidden + 1):
-                        grad_v_kj = delta_out[k] * hidden_ext[j]
-                        self.weights_hidden_output[k, j] -= eta * grad_v_kj
-
-                #    Capa entrada→oculta:
-                #       w_ji ← w_ji − η δ_j x_i
-                #    donde x_i son entradas o bias correspondiente.
-                x_ext = np.concatenate([x_vec, np.array([1.0])])  # (n_inputs + 1,)
-                for j in range(self.n_hidden):
-                    for i in range(self.n_inputs + 1):
-                        grad_w_ji = delta_hid[j] * x_ext[i]
-                        self.weights_input_hidden[j, i] -= eta * grad_w_ji
-
-                # -- Pesos después de la actualización --
-                w_in_hid_after = self.weights_input_hidden.copy()
-                w_hid_out_after = self.weights_hidden_output.copy()
-
-                # 4) Registrar paso
-                step = BackpropTrainingStep(
-                    epoch=epoch,
-                    pattern_index=idx,
-                    x=x_vec.copy(),
-                    target=t_vec.copy(),
-                    net_hidden=net_h.copy(),
-                    out_hidden=out_h.copy(),
-                    net_output=net_o.copy(),
-                    out_output=out_o.copy(),
-                    delta_output=delta_out.copy(),
-                    delta_hidden=delta_hid.copy(),
-                    weights_input_hidden_before=w_in_hid_before,
-                    weights_input_hidden_after=w_in_hid_after,
-                    weights_hidden_output_before=w_hid_out_before,
-                    weights_hidden_output_after=w_hid_out_after,
-                    error_scalar=E_pattern,
-                )
-                self.training_history.append(step)
-
-            # Criterio de parada por error medio
-            mean_error = float(np.mean(epoch_errors)) if epoch_errors else 0.0
-            if mean_error <= self.config.error_threshold:
-                break
-
-        return self.training_history
-
-    # --------------------------------------------------------
-    # PREDICCIÓN
-    # --------------------------------------------------------
-
-    def predict(self, X: np.ndarray) -> np.ndarray:
-        """
-        Propaga hacia adelante un conjunto de patrones y devuelve
-        las salidas de la capa de salida.
-
-        Parámetros
-        ----------
-        X : np.ndarray
-            Matriz de entrada, shape (n_patrones, n_inputs).
-
-        Retorna
-        -------
-        np.ndarray
-            Matriz de salidas, shape (n_patrones, n_outputs).
-        """
-        if X.ndim != 2:
-            raise ValueError("X debe ser una matriz 2D.")
-        if X.shape[1] != self.n_inputs:
-            raise ValueError(
-                f"Se esperaban {self.n_inputs} columnas de entrada; "
-                f"se recibieron {X.shape[1]}."
-            )
-
-        outputs = []
-        for i in range(X.shape[0]):
-            _, _, _, out_o = self._forward(X[i, :])
-            outputs.append(out_o)
-        return np.vstack(outputs)
+    return BackpropResult(
+        epochs=epoch,
+        W_input_hidden=W_ih,
+        W_hidden_output=W_ho,
+        history=history
+    )
 
