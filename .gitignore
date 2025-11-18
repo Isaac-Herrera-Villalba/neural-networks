@@ -72,4 +72,5 @@ tmp/
 
 .venv
 .~lock.*
+.fuse_*
 
