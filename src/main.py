@@ -2,110 +2,144 @@
 # -*- coding: utf-8 -*-
 
 """
-src/main.py
+ src/main.py
  ------------------------------------------------------------
- Descripción:
+ Punto de entrada principal del sistema de Regresión Lineal.
 
-Programa principal que ejecuta el flujo completo del clasificador Naive Bayes
+ - Lee y procesa el archivo de configuración `input.txt`.
+ - Carga múltiples datasets (uno por bloque `DATASET=`).
+ - Ejecuta el análisis de regresión lineal simple o múltiple.
+ - Genera un único reporte PDF unificado con todas las instancias.
+
+ Estructura del flujo:
+   1. Leer configuración global.
+   2. Por cada bloque de dataset:
+        a) Cargar datos y hoja especificada.
+        b) Preprocesar columnas numéricas.
+        c) Ejecutar regresión y generar bloque LaTeX.
+   3. Concatenar todos los bloques y generar un único PDF.
+ ------------------------------------------------------------
 """
 
 from __future__ import annotations
 import sys
-import unicodedata
-from .config import Config
-from .loader import load_dataset
-from .preprocess import discretize
-from .bayes import run_naive_bayes
-from .report_latex import render_pdf
+from pathlib import Path
 
-# Normaliza cadenas para comparación (quita tildes, minúsculas, sin espacios extra).
-def normalize_str(s: str) -> str:
-    s = str(s).strip().lower()
-    return ''.join(
-        c for c in unicodedata.normalize('NFD', s)
-        if unicodedata.category(c) != 'Mn'
-    )
+from src.core.config import Config
+from src.core.data_extractor.loader import load_dataset
+from src.core.data_extractor.preprocess_regression import ensure_numeric_subset
+from src.report.report_builder import build_full_report_block
+from src.report.report_latex import render_all_instances_pdf
 
-# Selecciona atributos y columna objetivo.
-def select_columns(df, cfg):
-    cols = list(df.columns)
-    normalized_cols = {normalize_str(c): c for c in cols}
 
-    # Determinar columna objetivo (target)
-    if cfg.target_column:
-        target_key = normalize_str(cfg.target_column)
-        if target_key not in normalized_cols:
-            raise ValueError(
-                f"La columna objetivo '{cfg.target_column}' no existe en el dataset.\n"
-                f"Columnas disponibles: {list(df.columns)}"
-            )
-        target = normalized_cols[target_key]
-    else:
-        target = cols[-1]  # Última columna por defecto
+# ============================================================
+# === PUNTO DE ENTRADA PRINCIPAL ==============================
+# ============================================================
 
-    # Determinar atributos
-    attrs = [c for c in cols if c != target]
-    if not cfg.use_all_attributes and cfg.attributes:
-        attrs = [normalized_cols[normalize_str(c)]
-                 for c in cfg.attributes if normalize_str(c) in normalized_cols]
-
-    if len(attrs) < 1:
-        raise ValueError("Se requieren ≥ 2 columnas (1 atributo + 1 clase)")
-
-    return attrs, target, normalized_cols
-
-# Función principal: controla la ejecución del programa
 def main():
-    # Verificación de argumentos del programa
-    if len(sys.argv) != 2:
-        print("Uso: python -m src.main input.txt")
+    """
+    Ejecuta el flujo completo del sistema de Regresión Lineal.
+    """
+    cfg_path = Path("input.txt")
+    if not cfg_path.exists():
+        print(f"[ERROR] No se encontró el archivo de configuración: {cfg_path}")
         sys.exit(1)
 
-    # Carga y preparación del archivo de configuración
-    cfg = Config(sys.argv[1]) # Carga del dataset
-    df = load_dataset(cfg.dataset, cfg.sheet) # Conversión a texto
-    df = df.astype(str)
+    # === Leer configuración ===
+    config = Config(str(cfg_path))
+    blocks = config.get_blocks()
 
-    # Selección de atributos y clase objetivo
-    attrs, target, normalized_cols = select_columns(df, cfg)
+    if not blocks:
+        print("[ERROR] No se detectaron bloques válidos en el archivo de configuración.")
+        sys.exit(1)
 
-    # Normalizar valores de instancia según columnas reales
-    if cfg.numeric_mode == "discretize":
-        df = discretize(df, attrs, bins=cfg.bins, strategy=cfg.discretize_strategy)
+    # === Variables acumulativas ===
+    all_latex_blocks = ""
+    global_index = 1
+    final_report_path = None
 
-    for idx, inst in enumerate(cfg.instances, 1):
-        # Normaliza nombres de atributos de la instancia
-        inst_norm = {}
-        for k, v in inst.items():
-            nk = normalize_str(k)
-            if nk in normalized_cols:
-                inst_norm[normalized_cols[nk]] = v
-            else:
-                print(f"[WARN] Atributo '{k}' no encontrado en las columnas del dataset, se ignora.")
+    print(f"[INFO] Se detectaron {len(blocks)} bloques de dataset en {cfg_path.name}")
 
-        print(f"\n===== INSTANCIA {idx}: {inst_norm} =====")
+    # === Procesar cada bloque (DATASET + INSTANCES) ===
+    for i, block in enumerate(blocks, 1):
+        kv = block["KV"]
+        instances = block["INSTANCES"]
 
-        # Ejecución del clasificador Naive Bayes para la instancia
-        try:
-            res = run_naive_bayes(df, target, attrs, inst_norm, alpha=cfg.laplace_alpha)
-        except KeyError as e:
-            print(f"[ERROR] Atributo faltante o incorrecto: {e}")
+        dataset_path = kv.get("DATASET")
+        sheet_name = kv.get("SHEET")
+        y_col = kv.get("DEPENDENT_VARIABLE")
+        x_cols_raw = kv.get("INDEPENDENT_VARIABLES")
+        report_path = kv.get("REPORT", "output/reporte.pdf")
+        final_report_path = report_path
+
+        if not dataset_path or not y_col or not x_cols_raw:
+            print(f"[WARN] Bloque {i}: configuración incompleta, se omite.")
             continue
 
-        # Obtención de la predicción con mayor probabilidad
-        pred = max(res.posteriors, key=res.posteriors.get)
-        print(f">>> Predicción: {pred}")
+        x_cols = [x.strip() for x in x_cols_raw.split(",") if x.strip()]
 
-        # Generación del reporte PDF si la ruta está configurada
-        if cfg.report_path:
-            out = cfg.report_path.replace(".pdf", f"_{idx}.pdf")
-            render_pdf(out, df, target, attrs, res.priors, res.cond_tables, inst_norm, res.posteriors, res.raw_counts)
+        print(f"\n=== Procesando dataset {i}/{len(blocks)} ===")
+        print(f"[INFO] Archivo: {dataset_path}")
+        print(f"[INFO] Hoja: {sheet_name}")
+        print(f"[INFO] Variables: Y={y_col}, X={x_cols}")
 
-            print(f"[OK] Reporte: {out}")
+        # === Cargar dataset ===
+        try:
+            df = load_dataset(dataset_path, sheet=sheet_name)
+        except Exception as e:
+            print(f"[ERROR] Fallo al cargar dataset '{dataset_path}': {e}")
+            continue
 
-    print("[OK] Ejecución completada. Si el .tex fue generado, puedes compilarlo con 'make latex'.")
+        # === Preprocesamiento numérico ===
+        used_cols = [y_col] + x_cols
+        try:
+            df_num, dropped = ensure_numeric_subset(df, used_cols)
+        except Exception as e:
+            print(f"[ERROR] Fallo al preprocesar datos: {e}")
+            continue
 
-# Punto de entrada del script
+        if df_num.empty:
+            print(f"[WARN] Dataset vacío tras limpieza, se omite bloque {i}.")
+            continue
+
+        if dropped > 0:
+            print(f"[INFO] Filas eliminadas durante preprocesamiento: {dropped}")
+
+        # === Construcción del bloque LaTeX ===
+        try:
+            block_tex = build_full_report_block(
+                instances=instances,
+                df_num=df_num,
+                y_col=y_col,
+                x_cols=x_cols,
+                start_index=global_index,  # contador global
+            )
+            all_latex_blocks += block_tex + "\n"
+            global_index += len(instances)
+            print(f"[OK] Bloque {i} procesado correctamente ({len(instances)} instancia(s)).")
+        except Exception as e:
+            print(f"[ERROR] Error generando bloque {i}: {e}")
+            continue
+
+    # === Compilar reporte unificado ===
+    if all_latex_blocks.strip():
+        print("\n=== Generando reporte PDF unificado ===")
+        try:
+            render_all_instances_pdf(final_report_path, all_latex_blocks)
+        except Exception as e:
+            print(f"[ERROR] No se pudo generar el PDF: {e}")
+    else:
+        print("[WARN] No se generaron bloques válidos; no hay contenido para el PDF final.")
+
+
+# ============================================================
+# === EJECUCIÓN ==============================================
+# ============================================================
+
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n[INTERRUPTED] Ejecución cancelada por el usuario.")
+        sys.exit(130)
 

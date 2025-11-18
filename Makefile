@@ -1,31 +1,52 @@
 # Makefile
 # -----------------------------------------------------------------------
 # Descripción:
-# Automatiza la ejecución del proyecto bayesian-classification.
-# Incluye la creación del entorno virtual, instalación de dependencias,
-# ejecución del clasificador bayesiano y compilación del reporte
-# en PDF mediante LaTeX.
+# Automatiza el flujo completo del proyecto **Linear Regression**.
+# Este proyecto implementa un sistema de **Regresión Lineal** (simple y múltiple)
+# desarrollado en Python, que genera automáticamente un **reporte en PDF**
+# con los resultados teóricos, matrices y ecuaciones calculadas.
+#
+# Estructura general del flujo:
+#   1. Crea un entorno virtual e instala dependencias necesarias (make env).
+#   2. Ejecuta el análisis definido en input.txt (make run).
+#   3. Compila el archivo LaTeX a PDF (make latex o make pdf).
+#   4. Visualiza el reporte (make view).
+#
+# Incluye compatibilidad con datasets .csv, .xlsx y .ods, y genera un
+# reporte matemático completo con:
+#   - Modelo lineal general.
+#   - Derivadas parciales y ecuaciones normales.
+#   - Matrices (X, Xᵀ, XᵀX, Xᵀy, β).
+#   - Sustitución de valores y predicciones numéricas.
+#
+# Dependencias gestionadas en requirements.txt
 # -----------------------------------------------------------------------
 
-PYTHON        = python3
-SRC_DIR       = src
-OUT_DIR       = output
-INPUT_FILE    = input.txt
-MAIN_FILE     = $(SRC_DIR)/main.py
-PDF_READER    = okular
+PYTHON         = python3
+SRC_DIR        = src
+SRC_DIR_2      = core
+SRC_DIR_3      = data_extractor
+SRC_DIR_4      = regression
+SRC_DIR_5      = report
+OUT_DIR        = output
+INPUT_FILE     = input.txt
+MAIN_FILE      = $(SRC_DIR)/main.py
+PDF_READER     = okular
+PYTHON_MODULES = __pycache__
 
-SPREADSHEET = libreoffice
-EXT = ods
+LATEX_REPORT_NAME = reporte
 
-DATASET = peliculas
-DATASET_PATH = data/$(DATASET).$(EXT)
+EXT           = ods
+
+DATASET       = ejemplo
+DATASET_PATH  = data/$(DATASET).$(EXT)
 
 VENV_DIR      = .venv
 PYTHON_VENV   = $(VENV_DIR)/bin/python
 PIP_VENV      = $(VENV_DIR)/bin/pip
 
-PDF_FILE      = $(OUT_DIR)/reporte_1.pdf
-TEX_FILE      = $(OUT_DIR)/reporte_1.tex
+PDF_FILE      = $(OUT_DIR)/$(LATEX_REPORT_NAME).pdf
+TEX_FILE      = $(OUT_DIR)/$(LATEX_REPORT_NAME).tex
 
 .PHONY: all help env run latex pdf view clean full show_dataset
 
@@ -35,7 +56,7 @@ all: help
 help:
 	@echo "Comandos disponibles:"
 	@echo "  make env    -> Crea entorno virtual e instala dependencias"
-	@echo "  make run    -> Ejecuta el clasificador bayesiano (genera .tex y PDF automático)"
+	@echo "  make run    -> Ejecuta la regresión lineal (genera .tex y PDF automático)"
 	@echo "  make latex  -> Compila manualmente el archivo .tex con LaTeX"
 	@echo "  make pdf    -> Alias de make run (genera reporte PDF desde input.txt)"
 	@echo "  make view   -> Abre el PDF resultante"
@@ -59,7 +80,7 @@ env:
 
 # -----------------------------------------------------------------------
 run:
-	@echo "=== Ejecutando clasificador bayesiano ==="
+	@echo "=== Ejecutando regresión lineal ==="
 	mkdir -pv $(OUT_DIR)/
 	$(PYTHON_VENV) -m $(SRC_DIR).main $(INPUT_FILE)
 	@echo "[OK] Ejecución completada. Si el .tex fue generado, puedes compilarlo con 'make latex'"
@@ -78,16 +99,6 @@ latex:
 	fi
 
 # -----------------------------------------------------------------------
-show_dataset:
-	@echo "Muestra el dataset utilizado"
-	@if [ -n "$$DISPLAY" ]; then \
-		echo "[OK] Abriendo $(DATASET_PATH) con LibreOffice..."; \
-		$(SPREADSHEET) "$(DATASET_PATH)" & \
-	else \
-		echo "[ERROR] No hay entorno gráfico (DISPLAY). Ejecuta este comando dentro de una sesión con GUI."; \
-	fi
-
-# -----------------------------------------------------------------------
 view:
 	@echo "Abriendo PDF con Okular..."
 	$(PDF_READER) $(PDF_FILE) &
@@ -99,8 +110,12 @@ full: run latex view show_dataset
 clean:
 	@echo "Eliminando archivos generados..."
 	rm -rf $(OUT_DIR)/
-	find . -type f \( -name "*.aux" -o -name "*.log" -o -name "*.out" -o -name "*.toc" -o -name "*.tex" -o -name "*.synctex.gz" \) -delete
-	rm -rf $(SRC_DIR)/__pycache__
+	rm -rf $(SRC_DIR)/$(PYTHON_MODULES)
+	rm -rf $(SRC_DIR)/$(SRC_DIR_2)/$(PYTHON_MODULES)
+	rm -rf $(SRC_DIR)/$(SRC_DIR_2)/$(SRC_DIR_3)/$(PYTHON_MODULES)
+	rm -rf $(SRC_DIR)/$(SRC_DIR_4)/$(PYTHON_MODULES)
+	rm -rf $(SRC_DIR)/$(SRC_DIR_5)/$(PYTHON_MODULES)
+	
 	rm -f data/.~lock.*
 	@echo "Limpieza completada."
 
