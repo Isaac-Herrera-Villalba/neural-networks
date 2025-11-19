@@ -1,274 +1,147 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
 """
 src/report/latex_backprop.py
 ------------------------------------------------------------
-Descripción:
-Generador del bloque LaTeX correspondiente al entrenamiento
-de un Perceptrón Multicapa (MLP) entrenado mediante el método
-de Backpropagation, siguiendo EXCLUSIVAMENTE el procedimiento
-descrito en la presentación de Redes Neuronales.
+Bloque LaTeX para Backpropagation (MLP con 1 capa oculta).
 
-Características:
-------------------------------------------------------------
-✓ Dos capas:
-      - Capa oculta con n_h neuronas.
-      - Capa de salida con 1 neurona.
-
-✓ Fórmulas EXACTAS del PDF:
-      net_h      = Σ w_ih * x_i
-      y_h        = f(net_h)
-      net_o      = Σ w_ho * y_h
-      y_hat      = f(net_o)
-      error e    = y - y_hat
-      δ_o        = f'(net_o) * e
-      δ_h        = f'(net_h) * Σ (δ_o * w_ho)
-
-✓ Actualización de pesos:
-      Δw_ho = η * δ_o * y_h
-      Δw_ih = η * δ_h * x_i
-
-✓ MSE por época:
-      MSE = (1/N) Σ (y - y_hat)^2
-
-✓ Tablas por época y por patrón.
-
-Consumido por:
-  - src/report/report_nn_builder.py
-
-Requiere:
-  - src/nn/mlp_backprop.py (MLPBackpropResult)
-  - src/report/report_latex.py (_fmt_number, dataset_preview_table)
+Compatible con:
+    MLPBackpropResult.hidden_weights_history
+    MLPBackpropResult.output_weights_history
+    MLPBackpropResult.hidden_layer_history
+    MLPBackpropResult.output_history
+    MLPBackpropResult.mse_history
+    MLPBackpropResult.final_hidden_weights
+    MLPBackpropResult.final_output_weights
 ------------------------------------------------------------
 """
 
 from __future__ import annotations
-from typing import List
-import pandas as pd
-
-from src.nn.mlp_backprop import MLPBackpropResult
-from src.report.report_latex import _fmt_number, dataset_preview_table
+import numpy as np
+from src.report.report_latex import escape_latex, dataframe_to_latex_table
 
 
 # ============================================================
-# === Utilidades internas ====================================
+#   Formateador auxiliar para matrices y vectores
 # ============================================================
+def _fmt_matrix(M):
+    """Convierte una matriz o vector numpy en bloques LaTeX."""
+    if M.ndim == 1:
+        return " \\\\ ".join(f"{v:.4f}" for v in M)
 
-def _fmt_vector(v: List[float]) -> str:
-    """Formato (v1, v2, v3) amigable para LaTeX."""
-    return "(" + ", ".join(_fmt_number(x) for x in v) + ")"
-
-
-def _fmt_matrix(mat: List[List[float]]) -> str:
-    """Convierte una matriz a LaTeX tipo (fila1 ; fila2 ; ...)."""
-    rows = ["(" + ", ".join(_fmt_number(v) for v in row) + ")" for row in mat]
-    return "( " + " ; ".join(rows) + " )"
+    rows = []
+    for row in M:
+        rows.append(" & ".join(f"{v:.4f}" for v in row) + " \\\\")
+    return "\n".join(rows)
 
 
 # ============================================================
-# === Bloque Backpropagation =================================
+#   Construcción del bloque LaTeX
 # ============================================================
+def build_backprop_block(result, df, X_cols, Y_col,
+                         lr, hidden_neurons, max_epochs):
 
-def build_backprop_block(
-    df_num: pd.DataFrame,
-    x_cols: List[str],
-    y_col: str,
-    learning_rate: float,
-    hidden_neurons: int,
-    max_epochs: int,
-    error_threshold: float,
-    result: MLPBackpropResult,
-    activation_name: str,
-    section_title: str | None = None,
-) -> str:
-    """
-    Construye el bloque LaTeX completo correspondiente al entrenamiento
-    de un MLP utilizando Backpropagation, siguiendo exactamente el método
-    del PDF.
+    # ------------------------------------------------------------
+    # Recuperar datos del resultado
+    # ------------------------------------------------------------
+    W_hidden_final = result.final_hidden_weights
+    W_output_final = result.final_output_weights
+    mse_history = result.mse_history
 
-    Parámetros
-    ----------
-    df_num : pd.DataFrame
-        Datos numéricos.
-    x_cols : List[str]
-        Entradas X.
-    y_col : str
-        Salida objetivo Y.
-    learning_rate : float
-        Tasa de aprendizaje η.
-    hidden_neurons : int
-        Número de neuronas en la capa oculta.
-    max_epochs : int
-        Número máximo de épocas permitidas.
-    error_threshold : float
-        Umbral mínimo para detener entrenamiento.
-    result : MLPBackpropResult
-        Resultado devuelto por train_mlp_backprop().
-    activation_name : str
-        Nombre de la función de activación (e.g. SIGMOID).
-    section_title : str | None
-        Título de la sección en el PDF.
+    converged = result.converged
+    convergence_epoch = result.convergence_epoch
 
-    Retorna
-    -------
-    str
-        Bloque LaTeX formateado.
-    """
-    lines: List[str] = []
-
-    if section_title is None:
-        section_title = (
-            f"Backpropagation para la función {y_col} "
-            f"con entradas ({', '.join(x_cols)})"
-        )
-
-    # ========================================================
-    # 1. Encabezado
-    # ========================================================
-    lines.append(f"\\section*{{{section_title}}}")
-    lines.append(
-        r"En esta sección se documenta paso a paso el entrenamiento "
-        r"de un perceptrón multicapa (MLP) de una sola capa oculta, "
-        r"empleando el algoritmo de \textbf{Backpropagation}."
+    # Alimentación al dataset
+    df_preview = dataframe_to_latex_table(
+        df, caption=f"Vista previa del dataset (Backprop — {escape_latex(Y_col)})"
     )
 
-    lines.append(r"\subsection*{Resumen del dataset}")
-    lines.append(dataset_preview_table(df_num))
+    # ------------------------------------------------------------
+    # Historial de MSE
+    # ------------------------------------------------------------
+    mse_fmt = "\n".join(f"Epoch {i}: MSE = {m:.6f}"
+                        for i, m in enumerate(mse_history))
 
-    # ========================================================
-    # 2. Modelo MLP según el PDF
-    # ========================================================
-    lines.append(r"\subsection*{Modelo MLP y ecuaciones del PDF}")
+    # ------------------------------------------------------------
+    # Historial de pesos por época
+    # ------------------------------------------------------------
+    hidden_w_hist = []
+    for i, W in enumerate(result.hidden_weights_history):
+        m = ", ".join("[" + ", ".join(f"{v:.4f}" for v in row) + "]" for row in W)
+        hidden_w_hist.append(f"Epoch {i}: {m}")
+    hidden_w_hist_fmt = "\n".join(hidden_w_hist)
 
-    # Capa oculta
-    lines.append(r"\textbf{Capa oculta:}")
-    lines.append(r"\[ \text{net}_h = \sum_{i=1}^{n} w_{ih} x_i \]")
-    lines.append(r"\[ y_h = f(\text{net}_h) \]")
+    output_w_hist = []
+    for i, W in enumerate(result.output_weights_history):
+        m = ", ".join(f"{v:.4f}" for v in W.flatten())
+        output_w_hist.append(f"Epoch {i}: [{m}]")
+    output_w_hist_fmt = "\n".join(output_w_hist)
 
-    # Capa salida
-    lines.append(r"\textbf{Capa de salida:}")
-    lines.append(r"\[ \text{net}_o = \sum_{h=1}^{H} w_{ho} y_h \]")
-    lines.append(r"\[ \hat{y} = f(\text{net}_o) \]")
-
-    # Error y deltas
-    lines.append(r"\textbf{Error y términos de corrección (PDF):}")
-    lines.append(r"\[ e = y - \hat{y} \]")
-    lines.append(r"\[ \delta_o = f'(\text{net}_o) \; e \]")
-    lines.append(
-        r"\[ \delta_h = f'(\text{net}_h)\sum_{o} \delta_o w_{ho} \]"
-        r" \hspace{2em} \text{(solo hay una neurona de salida)}"
+    # ------------------------------------------------------------
+    # Convergencia
+    # ------------------------------------------------------------
+    conv_text = (
+        f"La red convergió en la época {convergence_epoch}."
+        if converged else
+        "La red **no** convergió dentro del número máximo de épocas."
     )
 
-    # Actualizaciones
-    lines.append(r"\textbf{Actualización de pesos:}")
-    lines.append(r"\[ \Delta w_{ho} = \eta \, \delta_o \, y_h \]")
-    lines.append(r"\[ \Delta w_{ih} = \eta \, \delta_h \, x_i \]")
+    # ------------------------------------------------------------
+    # Generación del bloque LaTeX
+    # ------------------------------------------------------------
+    latex = f"""
+% ============================================================
+\\section*{{Backpropagation (MLP) — Tabla {escape_latex(Y_col)} }}
+% ============================================================
 
-    # ========================================================
-    # 3. Parámetros del entrenamiento
-    # ========================================================
-    lines.append(r"\subsection*{Parámetros de entrenamiento}")
+\\subsection*{{Arquitectura de la red}}
+\\begin{{itemize}}
+  \\item Entradas: {len(X_cols)}
+  \\item Neuronas ocultas: {hidden_neurons}
+  \\item Neurona de salida: 1
+  \\item Tasa de aprendizaje: $\\eta = {lr}$
+  \\item Épocas máximas: {max_epochs}
+\\end{{itemize}}
 
-    lines.append(r"\begin{itemize}")
-    lines.append(rf"\item Tasa de aprendizaje: $\eta = {_fmt_number(learning_rate)}$.")
-    lines.append(rf"\item Neuronas ocultas: $H = {hidden_neurons}$.")
-    lines.append(rf"\item Épocas máximas: $N_{{\text{{max}}}} = {max_epochs}$.")
-    lines.append(rf"\item Umbral de error: $\epsilon = {_fmt_number(error_threshold)}$.")
-    lines.append(rf"\item Activación: \texttt{{{activation_name}}}.")
-    lines.append(rf"\item Pesos iniciales capa oculta: ${_fmt_matrix(result.weights_hidden_initial)}$.")
-    lines.append(rf"\item Pesos iniciales capa salida: ${_fmt_vector(result.weights_output_initial)}$.")
-    lines.append(r"\end{itemize}")
+\\subsection*{{Dataset utilizado}}
+{df_preview}
 
-    # ========================================================
-    # 4. Desarrollo del entrenamiento
-    # ========================================================
-    lines.append(r"\subsection*{Desarrollo del entrenamiento (época por época)}")
+\\subsection*{{Pesos finales}}
 
-    final_mse = result.mse_history[-1]
-    if final_mse <= error_threshold:
-        lines.append(
-            rf"El MLP alcanza el criterio de paro en la época $E = {result.epochs}$ "
-            rf"con un MSE final de ${_fmt_number(final_mse)}$."
-        )
-    else:
-        lines.append(
-            r"El entrenamiento no alcanza el umbral de error especificado; "
-            r"se muestran los cálculos completos."
-        )
+\\[
+W_{{hidden}} =
+\\begin{{bmatrix}}
+{_fmt_matrix(W_hidden_final)}
+\\end{{bmatrix}}
+\\]
 
-    # Recorrer cada época
-    for epoch_entry in result.epoch_history:
-        epoch = epoch_entry["epoch"]
-        mse = epoch_entry["mse"]
-        pattern_logs = epoch_entry["pattern_logs"]
+\\[
+W_{{output}} =
+\\begin{{bmatrix}}
+{_fmt_matrix(W_output_final)}
+\\end{{bmatrix}}
+\\]
 
-        lines.append(r"\subsubsection*{" + rf"Época {epoch}" + r"}")
-        lines.append(
-            rf"\textit{{Error cuadrático medio}}: "
-            rf"$\text{{MSE}} = {_fmt_number(mse)}$."
-        )
+\\subsection*{{Estado de convergencia}}
+{conv_text}
 
-        # Tabla principal
-        lines.append(r"\begin{tabular}{c c c c c c c c}")
-        lines.append(r"\toprule")
-        lines.append(
-            r"Patrón & $\mathbf{x}$ & $y$ & "
-            r"$\text{net}_o$ & $\hat{y}$ & $e$ & "
-            r"$\delta_o$ & MSE parcial \\"
-        )
-        lines.append(r"\midrule")
+\\subsection*{{Historial del Error (MSE por época)}}
+\\begin{{verbatim}}
+{mse_fmt}
+\\end{{verbatim}}
 
-        for idx, log in enumerate(pattern_logs, start=1):
-            x_vec = log["x"]
-            y_tgt = log["y_target"]
-            net_o = log["net_o"]
-            y_hat = log["y_hat"]
-            e = log["error"]
-            delta_o = log["delta_o"]
+\\subsection*{{Historial de pesos — Capa oculta}}
+\\begin{{verbatim}}
+{hidden_w_hist_fmt}
+\\end{{verbatim}}
 
-            lines.append(
-                rf"{idx} & $({_fmt_vector(x_vec)})$ & {y_tgt} & "
-                rf"{_fmt_number(net_o)} & {_fmt_number(y_hat)} & "
-                rf"{_fmt_number(e)} & {_fmt_number(delta_o)} & "
-                rf"{_fmt_number(e*e)} \\"
-            )
+\\subsection*{{Historial de pesos — Capa de salida}}
+\\begin{{verbatim}}
+{output_w_hist_fmt}
+\\end{{verbatim}}
 
-        lines.append(r"\bottomrule")
-        lines.append(r"\end{tabular}")
-        lines.append(r"\\[1em]")
+\\vspace{{0.6cm}}
+"""
 
-        # Pesos resumen
-        lines.append(r"\textit{Pesos después de esta época:}")
-        lines.append(
-            rf"\[ W_{{\text{{oculta}}}} = {_fmt_matrix(epoch_entry['weights_hidden_after'])} \]"
-        )
-        lines.append(
-            rf"\[ W_{{\text{{salida}}}} = {_fmt_vector(epoch_entry['weights_output_after'])} \]"
-        )
-        lines.append(r"\\[1em]")
-
-    # ========================================================
-    # 5. Conclusión
-    # ========================================================
-    lines.append(r"\subsection*{Conclusiones del entrenamiento Backpropagation}")
-
-    if final_mse <= error_threshold:
-        lines.append(
-            r"El MLP logra aproximar la función objetivo reduciendo el error "
-            r"por debajo del umbral especificado, evidenciando que el problema "
-            r"es no linealmente separable pero sí aproximable con una capa "
-            r"oculta adecuada."
-        )
-    else:
-        lines.append(
-            r"El entrenamiento no alcanzó el umbral de error; esto puede indicar "
-            r"que el número de neuronas ocultas es insuficiente, la tasa de "
-            r"aprendizaje no es adecuada o que el problema requiere múltiples "
-            r"capas o funciones de activación distintas."
-        )
-
-    lines.append(r"\newpage")
-
-    return "\n".join(lines)
+    return latex
 

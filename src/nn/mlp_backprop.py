@@ -1,272 +1,192 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
 """
 src/nn/mlp_backprop.py
 ------------------------------------------------------------
-Descripción:
-Implementación de un Perceptrón Multicapa (MLP) con aprendizaje
-mediante Backpropagation EXACTAMENTE como se describe en la
-presentación de Redes Neuronales entregada en el PDF.
+Implementación simple y didáctica de Backpropagation (MLP)
+según la presentación de redes neuronales proporcionada.
 
-Arquitectura soportada:
-    - 1 capa oculta (neuronas configurables)
-    - 1 neurona de salida
-    - Activación sigmoide en TODAS las neuronas
+Arquitectura fija:
+        n entradas  →  H neuronas ocultas  →  1 salida
 
-El entrenamiento es ON-LINE (patrón por patrón), siguiendo:
+Funciones:
+ - train_backpropagation(): entrenamiento estándar por épocas
+ - Forward pass: usa sigmoide en capa oculta y salida
+ - Backward pass: gradientes según la regla delta generalizada
 
-    Forward-pass:
-        net_j = Σ (w_ji * x_i)
-        y_j   = sigmoid(net_j)
+Este módulo genera:
+ - Historial de pesos por época
+ - Historial de salidas de cada capa
+ - MSE por época
+ - Detección de convergencia opcional
 
-    Capa de salida:
-        δ_k = (t_k - y_k) * y_k * (1 - y_k)
-
-    Capa oculta:
-        δ_j = y_j(1 - y_j) Σ_k( δ_k * w_jk )
-
-    Actualización:
-        w_ji(new) = w_ji(old) + η * δ_j * x_i
-        w_kj(new) = w_kj(old) + η * δ_k * y_j
-
-El módulo devuelve toda la traza completa:
-    - nets, activaciones
-    - deltas
-    - errores
-    - actualizaciones de pesos
-    - pesos antes/después
-    - historial por época y por patrón
-
-Consumido por:
-    - src/main.py
-    - src/report/report_nn_builder.py
+Compatible con el generador LaTeX
 ------------------------------------------------------------
 """
 
 from __future__ import annotations
-from typing import List, Dict, Any
 import numpy as np
+from dataclasses import dataclass
 
 
 # ============================================================
-# === Funciones auxiliares ===================================
+#   Funciones auxiliares
 # ============================================================
 
-def sigmoid(x: float) -> float:
-    """Función sigmoide estándar."""
+def sigmoid(x):
     return 1.0 / (1.0 + np.exp(-x))
 
-
-def sigmoid_derivative(y: float) -> float:
-    """Derivada de la sigmoide usando la salida y."""
-    return y * (1 - y)
-
-
-# ============================================================
-# === Contenedor de resultados ===============================
-# ============================================================
-
-class BackpropResult:
-    """
-    Contenedor completo del entrenamiento MLP.
-
-    Atributos:
-    ----------
-    epochs : int
-        Número real de épocas ejecutadas.
-
-    W_input_hidden : np.ndarray
-        Pesos finales entre entrada y capa oculta.
-
-    W_hidden_output : np.ndarray
-        Pesos finales entre capa oculta y salida.
-
-    history : List[Dict]
-        Registro completo para LaTeX:
-
-        [
-          {
-            'epoch': n,
-            'pattern_logs': [
-                {
-                  'x': [...],
-                  'target': y,
-                  'net_hidden': [...],
-                  'y_hidden': [...],
-                  'net_out': valor,
-                  'y_out': valor,
-                  'delta_out': valor,
-                  'delta_hidden': [...],
-                  'delta_w_ih': matriz,
-                  'delta_w_ho': vector,
-                  'w_ih_before': matriz,
-                  'w_ho_before': vector,
-                  'w_ih_after': matriz,
-                  'w_ho_after': vector
-                }
-            ],
-            'mse': valor
-          }
-        ]
-    """
-
-    def __init__(self,
-                 epochs: int,
-                 W_input_hidden: np.ndarray,
-                 W_hidden_output: np.ndarray,
-                 history: List[Dict[str, Any]]):
-
-        self.epochs = epochs
-        self.W_input_hidden = W_input_hidden
-        self.W_hidden_output = W_hidden_output
-        self.history = history
+def sigmoid_derivative(x):
+    """x es la salida sigmoide ya activada → derivada rápida."""
+    return x * (1.0 - x)
 
 
 # ============================================================
-# === Entrenamiento BACKPROPAGATION ==========================
+#   Resultado del entrenamiento MLP Backprop
 # ============================================================
 
-def train_backprop(
+@dataclass
+class MLPBackpropResult:
+    hidden_weights_history: list        # lista de matrices W_h por época
+    output_weights_history: list        # lista de vectores W_o por época
+    hidden_layer_history: list          # salidas de capa oculta
+    output_history: list                # salidas finales por época
+    mse_history: list                   # errores por época
+
+    final_hidden_weights: np.ndarray    # pesos finales capa oculta
+    final_output_weights: np.ndarray    # pesos finales capa salida
+    converged: bool
+    convergence_epoch: int
+
+
+# ============================================================
+#   ENTRENAMIENTO MLP BACKPROPAGATION
+# ============================================================
+
+def train_backpropagation(
     X: np.ndarray,
-    Y: np.ndarray,
+    y: np.ndarray,
     hidden_neurons: int = 2,
     learning_rate: float = 0.5,
-    max_epochs: int = 10000,
-    error_threshold: float = 0.01,
-    w_init_ih: np.ndarray | None = None,
-    w_init_ho: np.ndarray | None = None
-) -> BackpropResult:
+    max_epochs: int = 500,
+    threshold: float = 0.01,
+    initial_hidden_weights: np.ndarray | None = None,
+    initial_output_weights: np.ndarray | None = None,
+) -> MLPBackpropResult:
     """
-    Entrena un MLP usando Backpropagation EXACTO del PDF.
+    Entrenamiento de una red neuronal MLP con backpropagation.
 
     Parámetros
     ----------
-    X : np.ndarray (n_patterns × n_features)
-    Y : np.ndarray (n_patterns,)
+    X : np.ndarray (N x n)
+    y : np.ndarray (N x 1)
     hidden_neurons : int
-        Número de neuronas ocultas (configurable).
+        Tamaño de la capa oculta.
     learning_rate : float
     max_epochs : int
-    error_threshold : float
-    w_init_ih : pesos iniciales input→hidden (opcional)
-    w_init_ho : pesos iniciales hidden→output (opcional)
+    threshold : float
+    initial_hidden_weights : matriz H x n (opcional)
+    initial_output_weights : vector H (opcional)
 
     Retorna
     -------
-    BackpropResult
+    MLPBackpropResult
     """
 
-    n_patterns, n_features = X.shape
+    # Alinear forma
+    y = y.reshape(-1, 1)
+    N, n = X.shape
 
-    # --------------------------------------------------------
+    # ----------------------------------------------
     # Inicialización de pesos
-    # --------------------------------------------------------
-    if w_init_ih is None:
-        W_ih = np.random.uniform(-0.5, 0.5, (hidden_neurons, n_features))
+    # ----------------------------------------------
+    if initial_hidden_weights is None:
+        W_hidden = np.random.uniform(-0.5, 0.5, size=(hidden_neurons, n))
     else:
-        W_ih = np.array(w_init_ih, dtype=float)
+        W_hidden = np.array(initial_hidden_weights, dtype=float)
 
-    if w_init_ho is None:
-        W_ho = np.random.uniform(-0.5, 0.5, hidden_neurons)
+    if initial_output_weights is None:
+        W_out = np.random.uniform(-0.5, 0.5, size=(hidden_neurons, 1))
     else:
-        W_ho = np.array(w_init_ho, dtype=float)
+        W_out = np.array(initial_output_weights, dtype=float).reshape(hidden_neurons, 1)
 
-    history = []
+    # Historiales
+    hidden_weights_history = []
+    output_weights_history = []
+    hidden_layer_history = []
+    output_history = []
+    mse_history = []
+
+    converged = False
+    convergence_epoch = -1
 
     # ========================================================
-    # Entrenamiento por épocas
+    #   INICIO DEL ENTRENAMIENTO
     # ========================================================
-    for epoch in range(1, max_epochs + 1):
+    for epoch in range(max_epochs):
 
-        pattern_logs = []
-        squared_errors = []
+        # Guardar pesos actuales
+        hidden_weights_history.append(W_hidden.copy())
+        output_weights_history.append(W_out.copy())
 
-        for i in range(n_patterns):
+        # -------------------------
+        #   FORWARD PASS
+        # -------------------------
+        net_h = X @ W_hidden.T                    # (N x H)
+        out_h = sigmoid(net_h)                     # capa oculta
 
-            x = X[i]
-            target = Y[i]
+        net_o = out_h @ W_out                     # (N x 1)
+        out_o = sigmoid(net_o)                    # salida final
 
-            # ------------------------------------------------
-            # 1. Forward pass
-            # ------------------------------------------------
+        hidden_layer_history.append(out_h.copy())
+        output_history.append(out_o.copy())
 
-            # Capa oculta
-            net_hidden = W_ih @ x               # vector
-            y_hidden = np.array([sigmoid(n) for n in net_hidden])
+        # -------------------------
+        #   ERROR Y MSE
+        # -------------------------
+        error = y - out_o
+        mse = np.mean(error ** 2)
+        mse_history.append(mse)
 
-            # Capa de salida (una sola neurona)
-            net_out = np.dot(W_ho, y_hidden)
-            y_out = sigmoid(net_out)
-
-            # ------------------------------------------------
-            # 2. Cálculo de errores / deltas
-            # ------------------------------------------------
-            error = target - y_out
-            squared_errors.append(error**2)
-
-            # δ_k (capa de salida)
-            delta_out = error * sigmoid_derivative(y_out)
-
-            # δ_j (capa oculta)
-            delta_hidden = sigmoid_derivative(y_hidden) * (delta_out * W_ho)
-
-            # ------------------------------------------------
-            # 3. Cálculo de variaciones de pesos
-            # ------------------------------------------------
-            delta_W_ho = learning_rate * delta_out * y_hidden
-            delta_W_ih = learning_rate * delta_hidden.reshape(-1, 1) @ x.reshape(1, -1)
-
-            w_ih_before = W_ih.copy()
-            w_ho_before = W_ho.copy()
-
-            # Actualizar pesos
-            W_ho = W_ho + delta_W_ho
-            W_ih = W_ih + delta_W_ih
-
-            w_ih_after = W_ih.copy()
-            w_ho_after = W_ho.copy()
-
-            # Registro del patrón
-            pattern_logs.append({
-                "x": x.tolist(),
-                "target": float(target),
-                "net_hidden": net_hidden.tolist(),
-                "y_hidden": y_hidden.tolist(),
-                "net_out": float(net_out),
-                "y_out": float(y_out),
-                "delta_out": float(delta_out),
-                "delta_hidden": delta_hidden.tolist(),
-                "delta_w_ih": delta_W_ih.tolist(),
-                "delta_w_ho": delta_W_ho.tolist(),
-                "w_ih_before": w_ih_before.tolist(),
-                "w_ho_before": w_ho_before.tolist(),
-                "w_ih_after": w_ih_after.tolist(),
-                "w_ho_after": w_ho_after.tolist()
-            })
-
-        # --------------------------------------------------------
-        # Error de la época
-        # --------------------------------------------------------
-        mse = float(np.mean(squared_errors))
-
-        history.append({
-            "epoch": epoch,
-            "pattern_logs": pattern_logs,
-            "mse": mse
-        })
-
-        # criterio de paro
-        if mse <= error_threshold:
+        if mse <= threshold:
+            converged = True
+            convergence_epoch = epoch
             break
 
-    # --------------------------------------------------------
-    # Retorno del resultado
-    # --------------------------------------------------------
-    return BackpropResult(
-        epochs=epoch,
-        W_input_hidden=W_ih,
-        W_hidden_output=W_ho,
-        history=history
+        # -------------------------
+        #   BACKPROPAGATION
+        # -------------------------
+
+        # Delta en capa de salida
+        delta_o = error * sigmoid_derivative(out_o)      # (N x 1)
+
+        # Delta en capa oculta
+        delta_h = sigmoid_derivative(out_h) * (delta_o @ W_out.T)  # (N x H)
+
+        # -------------------------
+        #   ACTUALIZACIÓN DE PESOS
+        # -------------------------
+        # capa salida
+        grad_out = out_h.T @ delta_o                     # (H x 1)
+        W_out = W_out + learning_rate * grad_out
+
+        # capa oculta
+        grad_hidden = delta_h.T @ X                      # (H x n)
+        W_hidden = W_hidden + learning_rate * grad_hidden
+
+    # ========================================================
+    #   RESULTADO FINAL
+    # ========================================================
+    return MLPBackpropResult(
+        hidden_weights_history=hidden_weights_history,
+        output_weights_history=output_weights_history,
+        hidden_layer_history=hidden_layer_history,
+        output_history=output_history,
+        mse_history=mse_history,
+
+        final_hidden_weights=W_hidden,
+        final_output_weights=W_out,
+        converged=converged,
+        convergence_epoch=convergence_epoch
     )
 

@@ -1,245 +1,141 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
 """
 src/nn/perceptron.py
 ------------------------------------------------------------
-Descripción:
-Implementación exacta del algoritmo del Perceptrón
-según la presentación de la práctica de Redes Neuronales.
+Implementación del Perceptrón Simple (regla de aprendizaje
+de Rosenblatt).
 
-El Perceptrón que se implementa aquí:
+Este módulo realiza específicamente:
+    - Inicialización de pesos (manual o aleatoria)
+    - Entrenamiento ciclo por ciclo
+    - Actualización con la regla:
+          w = w + η * (y - ŷ) * x
+    - Detección de convergencia
+    - Registro de:
+          * pesos por época
+          * predicciones
+          * errores
+          * época de convergencia (si aplica)
 
-  - Opera sobre n variables de entrada (x1, x2, ..., xn).
-  - Utiliza pesos iniciales w_i y un sesgo (bias) opcional.
-  - Calcula el valor neto:
-        net = Σ (w_i * x_i)
-  - Aplica la función de activación escalón:
-        y_pred = 1 si net >= 0
-                 0 en otro caso
-  - Calcula el error:
-        e = y_target - y_pred
-  - Ajusta pesos siguiendo la regla del perceptrón:
-        w_i(new) = w_i(old) + η * e * x_i
-
-Este módulo:
-  ✓ No usa matrices.
-  ✓ No usa derivadas.
-  ✓ No usa conceptos que NO estén en el PDF.
-  ✓ Sigue paso a paso la definición clásica del perceptrón.
-
-El objetivo es entrenar la red hasta que:
-  - TODOS los patrones se clasifiquen correctamente, O
-  - se alcance MAX_EPOCHS.
-
-Este módulo devuelve:
-  - Pesos iniciales.
-  - Lista completa de actualizaciones por época.
-  - Pesos finales.
-  - Indicador de convergencia.
-  - Número total de épocas ejecutadas.
-  - Registros completos para generar el reporte LaTeX.
-
-Consumido por:
-  - src/main.py
-  - src/report/report_nn_builder.py
+Retorna un objeto PerceptronResult que será utilizado por
+los módulos LaTeX para construir el reporte.
 ------------------------------------------------------------
 """
 
 from __future__ import annotations
-from typing import List, Dict, Any
 import numpy as np
+from dataclasses import dataclass
 
 
 # ============================================================
-# === ESTRUCTURA DE LA SALIDA ================================
+# Objeto de resultados del perceptrón
 # ============================================================
 
+@dataclass
 class PerceptronResult:
-    """
-    Contenedor de resultados del entrenamiento del perceptrón.
-
-    Atributos
-    ---------
-    converged : bool
-        True si el perceptrón clasificó correctamente todos los
-        patrones antes de MAX_EPOCHS.
-
-    epochs : int
-        Número real de épocas ejecutadas.
-
-    weights_initial : List[float]
-        Pesos iniciales antes del entrenamiento.
-
-    weights_final : List[float]
-        Pesos finales después del entrenamiento.
-
-    epoch_history : List[Dict]
-        Lista ordenada de registros. Cada entrada contiene:
-
-        {
-            'epoch': número de época,
-            'pattern_logs': [
-                {
-                    'x': [...],
-                    'y_target': 0/1,
-                    'net': valor,
-                    'y_pred': 0/1,
-                    'error': valor,
-                    'delta_w': [...],
-                    'w_before': [...],
-                    'w_after': [...]
-                },
-                ...
-            ]
-        }
-    """
-
-    def __init__(self,
-                 converged: bool,
-                 epochs: int,
-                 weights_initial: List[float],
-                 weights_final: List[float],
-                 epoch_history: List[Dict[str, Any]]):
-
-        self.converged = converged
-        self.epochs = epochs
-        self.weights_initial = weights_initial
-        self.weights_final = weights_final
-        self.epoch_history = epoch_history
+    weights_history: list        # lista de vectores de pesos por época
+    predictions_history: list    # predicciones por época
+    error_history: list          # errores por época (conteo de clasificaciones incorrectas)
+    final_weights: np.ndarray    # pesos finales (vector)
+    converged: bool              # True/False
+    convergence_epoch: int       # época donde convergió (si aplica)
 
 
 # ============================================================
-# === FUNCIÓN PRINCIPAL DEL PERCEPTRÓN =======================
+# Función principal de entrenamiento
 # ============================================================
 
 def train_perceptron(
     X: np.ndarray,
-    Y: np.ndarray,
-    learning_rate: float = 0.5,
-    max_epochs: int = 30,
-    w_init: List[float] | None = None
+    y: np.ndarray,
+    learning_rate: float = 0.1,
+    max_epochs: int = 20,
+    threshold: float = 0.0,
+    initial_weights: np.ndarray | None = None
 ) -> PerceptronResult:
     """
-    Entrena un perceptrón según la regla mostrada en el PDF:
-
-        net = Σ w_i * x_i
-        y_pred = step(net)
-        e = y - y_pred
-        w_i(new) = w_i(old) + η * e * x_i
+    Entrena un perceptrón simple.
 
     Parámetros
     ----------
-    X : np.ndarray, shape = (n_patrones, n_features)
-        Matriz de patrones de entrada.
-        Cada fila es un patrón: [x1, x2, ..., xn]
-
-    Y : np.ndarray, shape = (n_patrones,)
-        Vector de salidas objetivo (0/1)
-
+    X : np.ndarray (N x n)
+        Matriz de entradas.
+    y : np.ndarray (N x 1)
+        Vector objetivo con valores {-1, +1}.
     learning_rate : float
-        Valor η usado en la actualización de pesos.
-
+        Tasa de aprendizaje η.
     max_epochs : int
-        Número máximo de repeticiones sobre todo el dataset.
-
-    w_init : list[float] | None
-        Pesos iniciales opcionales.
-        Si es None, se inicia con w_i = 0.0
+        Número máximo de épocas.
+    threshold : float
+        Umbral/bias fijo (se suma al producto punto).
+    initial_weights : np.ndarray | None
+        Pesos iniciales. Si None → aleatorios pequeños.
 
     Retorna
     -------
     PerceptronResult
-        Objeto con toda la información necesaria para generar
-        el reporte LaTeX paso a paso.
     """
 
-    n_patterns, n_features = X.shape
+    N, n = X.shape
 
-    # ----------------------------------------------
-    # 1. Inicialización de pesos
-    # ----------------------------------------------
-    if w_init is None:
-        w = np.zeros(n_features)
+    # Aplanar y a vector 1D
+    y = y.reshape(-1)
+
+    # Inicialización de pesos
+    if initial_weights is None:
+        w = np.random.uniform(-0.5, 0.5, size=n)
     else:
-        w = np.array(w_init, dtype=float)
+        w = np.array(initial_weights, dtype=float).reshape(n)
 
-    weights_initial = w.copy().tolist()
-    epoch_history: List[Dict[str, Any]] = []
+    weights_history = []
+    predictions_history = []
+    error_history = []
 
-    # ----------------------------------------------
-    # 2. Entrenamiento por épocas
-    # ----------------------------------------------
-    for epoch in range(1, max_epochs + 1):
+    converged = False
+    convergence_epoch = -1
 
-        pattern_logs = []
-        errors_epoch = 0
+    # ========================================================
+    # ITERAR ÉPOCA POR ÉPOCA
+    # ========================================================
+    for epoch in range(max_epochs):
 
-        # recorrer todos los patrones
-        for i in range(n_patterns):
+        errors = 0
+        y_pred_epoch = []
 
-            x = X[i]
-            y_target = Y[i]
+        # Guardar copia de pesos previos
+        weights_history.append(w.copy())
 
-            # --- net ---
-            net = float(np.dot(w, x))
+        # Recorrer patrones
+        for i in range(N):
+            x_i = X[i]
+            activation = np.dot(w, x_i) + threshold
+            y_hat = 1 if activation >= 0 else -1
+            y_pred_epoch.append(y_hat)
 
-            # --- activación escalón ---
-            y_pred = 1 if net >= 0 else 0
+            if y_hat != y[i]:
+                errors += 1
+                # Regla del perceptrón
+                w = w + learning_rate * (y[i] - y_hat) * x_i
 
-            # --- error ---
-            error = y_target - y_pred
+        predictions_history.append(np.array(y_pred_epoch))
+        error_history.append(errors)
 
-            # registrar si hubo error
-            if error != 0:
-                errors_epoch += 1
+        # Condición de convergencia
+        if errors == 0:
+            converged = True
+            convergence_epoch = epoch
+            break
 
-            # --- cálculo de Δw ---
-            delta_w = learning_rate * error * x
+    # Guardar pesos finales
+    final_weights = w.copy()
 
-            w_before = w.copy().tolist()
-
-            # actualizar pesos
-            w = w + delta_w
-
-            w_after = w.copy().tolist()
-
-            # --- registrar patrón ---
-            pattern_logs.append({
-                "x": x.tolist(),
-                "y_target": int(y_target),
-                "net": net,
-                "y_pred": int(y_pred),
-                "error": int(error),
-                "delta_w": delta_w.tolist(),
-                "w_before": w_before,
-                "w_after": w_after
-            })
-
-        # registrar la época completa
-        epoch_history.append({
-            "epoch": epoch,
-            "pattern_logs": pattern_logs
-        })
-
-        # criterio de paro: no hubo errores
-        if errors_epoch == 0:
-            return PerceptronResult(
-                converged=True,
-                epochs=epoch,
-                weights_initial=weights_initial,
-                weights_final=w.tolist(),
-                epoch_history=epoch_history
-            )
-
-    # ----------------------------------------------
-    # 3. No convergió en MAX_EPOCHS
-    # ----------------------------------------------
     return PerceptronResult(
-        converged=False,
-        epochs=max_epochs,
-        weights_initial=weights_initial,
-        weights_final=w.tolist(),
-        epoch_history=epoch_history
+        weights_history=weights_history,
+        predictions_history=predictions_history,
+        error_history=error_history,
+        final_weights=final_weights,
+        converged=converged,
+        convergence_epoch=convergence_epoch
     )
 

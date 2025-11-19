@@ -1,3 +1,4 @@
+# input.txt
 # ============================================================================
 # Proyecto: Neural Networks (Perceptrón / Regla Delta / MLP Backpropagation)
 # Dataset lógico: AND, XOR, BICONDITIONAL (↔)
@@ -19,61 +20,128 @@
 # ============================================================================
 
 
-# ─────────────────────────────────────────────────────────────
-# BLOQUE 1 — Perceptrón entrenando tabla AND (Sheet1)
-# ─────────────────────────────────────────────────────────────
+## ─────────────────────────────────────────────────────────────
+## BLOQUE 1 — Perceptrón entrenando tabla AND (Sheet1)
+## ─────────────────────────────────────────────────────────────
+#DATASET = data/dataset.ods
+#SHEET = Sheet1
+#METHOD = PERCEPTRON
+#
+#X_COLS = x1, x2
+#Y_COL  = AND
+#
+#LEARNING_RATE = 0.5
+#MAX_EPOCHS    = 30
+#
+#/*  
+#Salida esperada del perceptrón:
+#Debe aprender la función AND y converger rápidamente.
+#*/
+#
+#
+## ─────────────────────────────────────────────────────────────
+## BLOQUE 2 — Regla Delta entrenando XOR (Sheet2)
+## ─────────────────────────────────────────────────────────────
+#DATASET = data/dataset.ods
+#SHEET = Sheet2
+#METHOD = DELTA_RULE
+#
+#X_COLS = x1, x2
+#Y_COL  = XOR
+#
+#LEARNING_RATE = 0.5
+#MAX_EPOCHS    = 50
+#
+#/*  
+#La regla delta NO puede resolver XOR
+#ya que es linealmente inseparable.
+#El reporte debe demostrar matemáticamente la no convergencia.
+#*/
+#
+#
+## ─────────────────────────────────────────────────────────────
+## BLOQUE 3 — Perceptrón entrenando BICONDITIONAL (↔) (Sheet3)
+## ─────────────────────────────────────────────────────────────
+#DATASET = data/dataset.ods
+#SHEET = Sheet3
+#METHOD = PERCEPTRON
+#
+#X_COLS = x1, x2
+#Y_COL  = ↔     # será normalizado automáticamente a "BICONDITIONAL"
+#
+#LEARNING_RATE = 0.5
+#MAX_EPOCHS    = 30
+#
+#/*
+#La función ↔ (bicondicional) SÍ es linealmente separable.
+#El perceptrón debe converger.
+#*/
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================================
+# Neural Networks — Perceptron / Delta Rule / MLP Backprop
+# ============================================================================
+
+# -------------------------
+# BLOQUE 1 — Perceptrón AND
+# -------------------------
+NN = PERCEPTRON
 DATASET = data/dataset.ods
 SHEET = Sheet1
-METHOD = PERCEPTRON
 
 X_COLS = x1, x2
 Y_COL  = AND
 
 LEARNING_RATE = 0.5
-MAX_EPOCHS    = 30
+MAX_EPOCHS = 30
 
-/*  
-Salida esperada del perceptrón:
-Debe aprender la función AND y converger rápidamente.
+/*
+Salida esperada:
+El perceptrón debe aprender AND (linealmente separable).
 */
 
-
-# ─────────────────────────────────────────────────────────────
-# BLOQUE 2 — Regla Delta entrenando XOR (Sheet2)
-# ─────────────────────────────────────────────────────────────
+# -------------------------
+# BLOQUE 2 — Delta Rule XOR
+# -------------------------
+NN = DELTA_RULE
 DATASET = data/dataset.ods
 SHEET = Sheet2
-METHOD = DELTA_RULE
 
 X_COLS = x1, x2
 Y_COL  = XOR
 
 LEARNING_RATE = 0.5
-MAX_EPOCHS    = 50
-
-/*  
-La regla delta NO puede resolver XOR
-ya que es linealmente inseparable.
-El reporte debe demostrar matemáticamente la no convergencia.
-*/
-
-
-# ─────────────────────────────────────────────────────────────
-# BLOQUE 3 — Perceptrón entrenando BICONDITIONAL (↔) (Sheet3)
-# ─────────────────────────────────────────────────────────────
-DATASET = data/dataset.ods
-SHEET = Sheet3
-METHOD = PERCEPTRON
-
-X_COLS = x1, x2
-Y_COL  = ↔     # será normalizado automáticamente a "BICONDITIONAL"
-
-LEARNING_RATE = 0.5
-MAX_EPOCHS    = 30
+MAX_EPOCHS = 50
 
 /*
-La función ↔ (bicondicional) SÍ es linealmente separable.
-El perceptrón debe converger.
+La regla delta NO puede resolver XOR
+(linealmente inseparable).
 */
 
+# -------------------------
+# BLOQUE 3 — Perceptrón BICONDITIONAL
+# -------------------------
+NN = PERCEPTRON
+DATASET = data/dataset.ods
+SHEET = Sheet3
+
+X_COLS = x1, x2
+Y_COL  = ↔
+
+LEARNING_RATE = 0.5
+MAX_EPOCHS = 30
+
+/*
+El operador ↔ es linealmente separable.
+El perceptrón debe converger.
+*/
 

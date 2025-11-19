@@ -1,210 +1,142 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
 """
 src/report/report_latex.py
 ------------------------------------------------------------
-Descripción:
-Módulo central para la generación del PDF final del proyecto
-de Redes Neuronales. Aquí se definen:
-
-1. Plantilla LaTeX base:
-      - Preambulo moderno, con soporte matemático.
-      - Márgenes adecuados y salida profesional.
-      - Configuración para español.
-
-2. Utilidades de conversión:
-      - _fmt_number(): formateo numérico uniforme.
-      - _matrix_to_latex(): matrices pequeñas para pesos.
-      - dataset_preview_table(): tabla del dataset.
-
-3. Función principal render_pdf():
-      Toma un bloque LaTeX generado por:
-        - latex_perceptron.py
-        - latex_delta.py
-        - latex_backprop.py
-      y produce el PDF final.
-
-Este módulo NO realiza cálculos de redes neuronales.
-Solo formatea y renderiza.
+Funciones auxiliares para:
+ - Escapar caracteres LaTeX
+ - Convertir DataFrames a tablas LaTeX
+ - Generar documentos PDF completos desde bloques de LaTeX
 ------------------------------------------------------------
 """
 
 from __future__ import annotations
-from pathlib import Path
-from typing import List
 import subprocess
-import numpy as np
+from pathlib import Path
 import pandas as pd
 
 
 # ============================================================
-# === PREÁMBULO LaTeX GENERAL ================================
+# ESCAPAR CARACTERES ESPECIALES DE LATEX
 # ============================================================
 
-LATEX_PREAMBLE = r"""
-\documentclass[11pt]{article}
+def escape_latex(text: str) -> str:
+    if not isinstance(text, str):
+        return str(text)
 
-\usepackage[margin=2.5cm]{geometry}
-\usepackage[utf8]{inputenc}
-\usepackage[T1]{fontenc}
+    repl = {
+        "\\": r"\textbackslash{}",
+        "&": r"\&",
+        "%": r"\%",
+        "$": r"\$",
+        "#": r"\#",
+        "_": r"\_",
+        "{": r"\{",
+        "}": r"\}",
+        "~": r"\textasciitilde{}",
+        "^": r"\textasciicircum{}",
+    }
 
-\usepackage[spanish,es-noshorthands]{babel}
-\usepackage{microtype}
+    for a, b in repl.items():
+        text = text.replace(a, b)
+    return text
 
-\usepackage{amsmath}
-\usepackage{amssymb}
-\usepackage{bm}
+
+# ============================================================
+# CONVERTIR DATAFRAME A TABLA LATEX
+# ============================================================
+
+
+def dataframe_to_latex_table(df: pd.DataFrame, caption: str | None = None, max_rows: int = 20) -> str:
+    """
+    Convierte un DataFrame en una tabla LaTeX sin usar pandas.to_latex()
+    para evitar dependencia con Jinja2.
+    """
+
+    if df.empty:
+        return r"\textbf{(Dataset vacío)}"
+
+    df2 = df.head(max_rows).copy()
+    df2 = df2.applymap(escape_latex)
+
+    # -------- Construcción manual de tabla LaTeX --------
+    cols = list(df2.columns)
+    header = " & ".join(cols) + r" \\ \hline"
+
+    rows = []
+    for _, row in df2.iterrows():
+        rows.append(" & ".join(str(v) for v in row) + r" \\")
+    body = "\n".join(rows)
+
+    table_latex = (
+        r"\begin{table}[H]" "\n"
+        r"\centering" "\n"
+        r"\begin{tabular}{|" + "c|"*len(cols) + "}" "\n"
+        r"\hline" "\n"
+        + header + "\n"
+        + body + "\n"
+        r"\hline" "\n"
+        r"\end{tabular}" "\n"
+    )
+
+    if caption:
+        table_latex += r"\caption{" + escape_latex(caption) + "}\n"
+
+    table_latex += r"\end{table}" "\n"
+
+    note = (
+        r"\newline{\small (Sólo se muestran las primeras "
+        + f"{max_rows}"
+        + r" filas.)}"
+    )
+
+    return table_latex + "\n" + note + "\n"
+
+
+# ============================================================
+# RENDERIZAR UN PDF COMPLETO
+# ============================================================
+
+def render_all_instances_pdf(output_pdf_path: str, latex_body: str):
+    """
+    Construye un documento LaTeX completo, lo compila con pdflatex
+    y genera el PDF en output/.
+    """
+
+    output_pdf_path = Path(output_pdf_path)
+    output_dir = output_pdf_path.parent
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    tex_path = output_dir / output_pdf_path.with_suffix(".tex").name
+
+    # Documento LaTeX completo
+    latex_full = r"""
+\documentclass[12pt]{article}
+\usepackage[spanish]{babel}
+\usepackage{amsmath, amssymb}
+\usepackage[a4paper,margin=2cm]{geometry}
 \usepackage{booktabs}
-
+\usepackage{array}
 \usepackage{graphicx}
 \usepackage{float}
 
-\usepackage{breqn}  % ecuaciones largas
-
-\usepackage{siunitx}
-\sisetup{
-  output-decimal-marker = {.},
-  group-separator={\,},
-  detect-all,
-  locale = US
-}
-
-\usepackage{array}
-\usepackage{ragged2e}
-\usepackage{enumitem}
-
-\setlength{\parskip}{0.8em}
-\setlength{\parindent}{0pt}
-
 \begin{document}
-\RaggedRight
-"""
-
-LATEX_POSTAMBLE = r"""
+""" + latex_body + r"""
 \end{document}
 """
 
+    # Guardar .tex
+    tex_path.write_text(latex_full, encoding="utf-8")
 
-# ============================================================
-# === UTILIDADES DE FORMATEO ================================
-# ============================================================
+    # Compilar PDF
+    cmd = [
+        "pdflatex",
+        "-interaction=nonstopmode",
+        tex_path.name
+    ]
 
-def _fmt_number(x: float) -> str:
-    """
-    Formatea un número a 6 decimales, garantizando punto decimal.
+    # Ejecutar pdflatex dentro del output/
+    subprocess.run(cmd, cwd=output_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    Ejemplo:
-        0.5 -> "0.500000"
-        1 -> "1.000000"
-    """
-    try:
-        s = f"{float(x):.6f}"
-    except Exception:
-        s = str(x)
-    return s.replace(",", ".")
-
-
-def _matrix_to_latex(M: np.ndarray) -> str:
-    """
-    Convierte una matriz NumPy a entorno bmatrix.
-
-    Se utiliza únicamente para pesos pequeños:
-    - Pesos capa oculta
-    - Pesos capa salida
-
-    No se usa para cálculos matriciales grandes.
-    """
-    rows, cols = M.shape
-    lines = []
-    for i in range(rows):
-        line = " & ".join(_fmt_number(M[i, j]) for j in range(cols))
-        lines.append(line + r" \\")
-    return "\\begin{bmatrix}\n" + "\n".join(lines) + "\n\\end{bmatrix}"
-
-
-def dataset_preview_table(df: pd.DataFrame, max_rows: int = 12, max_cols: int = 8) -> str:
-    """
-    Genera tabla resumida del dataset en LaTeX.
-
-    Ideal para mostrar las entradas y salidas del perceptrón, Regla Delta o Backprop.
-    """
-    total_r, total_c = df.shape
-    df_disp = df.iloc[:max_rows, :max_cols].copy()
-
-    # Escapar guiones bajos para LaTeX
-    df_disp.columns = [str(c).replace("_", r"\_") for c in df_disp.columns]
-
-    header_fmt = " ".join(["c"] * len(df_disp.columns))
-
-    lines = []
-    lines.append(
-        rf"\textit{{Dimensiones del dataset:}} ${total_r}\,\text{{filas}} \times {total_c}\,\text{{columnas}}$"
-    )
-    lines.append("\\begin{tabular}{" + header_fmt + "}")
-    lines.append("\\toprule")
-    lines.append(" & ".join(df_disp.columns) + r" \\")
-    lines.append("\\midrule")
-
-    for _, row in df_disp.iterrows():
-        vals = [str(v).replace("_", r"\_") for v in row.values]
-        lines.append(" & ".join(vals) + r" \\")
-
-    lines.append("\\bottomrule")
-    lines.append("\\end{tabular}")
-
-    # mensaje si se truncó
-    if total_r > max_rows or total_c > max_cols:
-        lines.append(
-            r"\\[0.3em]\textit{Nota: la tabla ha sido truncada para visualización. "
-            r"Consulte el archivo original para ver todas las filas y columnas.}"
-        )
-
-    return "\n".join(lines)
-
-
-# ============================================================
-# === FUNCIÓN PRINCIPAL DE RENDER ============================
-# ============================================================
-
-def render_pdf(output_pdf: str, latex_body: str):
-    """
-    Renderiza un documento LaTeX ensamblado a un PDF final.
-
-    Parámetros
-    ----------
-    output_pdf : str
-        Ruta de salida del PDF.
-    latex_body : str
-        Contenido LaTeX generado por report_nn_builder.py
-
-    Tareas:
-      1. Ensambla preámbulo + cuerpo + cierre.
-      2. Compila con pdflatex en modo silencioso.
-      3. Produce el archivo final.
-
-    Nota:
-      - Requiere tener pdflatex instalado en el sistema.
-      - Produce un archivo .tex junto al PDF para depuración.
-    """
-    out = Path(output_pdf)
-    out.parent.mkdir(parents=True, exist_ok=True)
-
-    tex_path = out.with_suffix(".tex")
-    tex_data = LATEX_PREAMBLE + latex_body + LATEX_POSTAMBLE
-    tex_path.write_text(tex_data, encoding="utf-8")
-
-    # Ejecutar pdflatex dos veces
-    for _ in range(2):
-        proc = subprocess.run(
-            ["pdflatex", "-interaction=nonstopmode", tex_path.name],
-            cwd=out.parent,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.STDOUT,
-        )
-        if proc.returncode != 0:
-            print("[ERROR] Falló la compilación LaTeX.")
-            return
-
-    print(f"[OK] PDF generado en: {out}")
+    return str(output_pdf_path)
 
