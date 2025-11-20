@@ -9,6 +9,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import locale
+locale.setlocale(locale.LC_NUMERIC, 'C')   # <<< AQUI
+
 from src.core.config import Config
 from src.report.report_nn_builder import build_full_report
 from src.report.report_latex import render_all_instances_pdf

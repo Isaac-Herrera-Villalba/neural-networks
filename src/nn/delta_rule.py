@@ -3,26 +3,13 @@
 """
 src/nn/delta_rule.py
 ------------------------------------------------------------
-Implementación de la Regla Delta (ADALINE).
+Implementación de la Regla Delta (ADALINE) con bias entrenable.
 
-Este módulo utiliza la actualización basada en el error continuo:
+Modelo:
+    o(x) = w0 * 1 + w1 x1 + ... + wn xn
 
-        w = w + η * (y - ŷ) * x
-
-donde ŷ = w · x + b (sin función escalón, aprendizaje lineal).
-
-Características:
- - Compatible con entrenamiento de ADALINE según el PDF.
- - Permite pesos iniciales manuales.
- - Registra todo el historial:
-        * pesos
-        * errores cuadráticos
-        * predicciones por época
-
- - No requiere que los datos sean linealmente separables.
-   (En XOR demostrará explícitamente que NO converge).
-
-Devuelve DeltaRuleResult para alimentar el generador LaTeX.
+- Objetivos en {0,1} (como en las diapositivas).
+  Si el preprocesamiento trae y en {-1,1}, aquí se remapea a {0,1}.
 ------------------------------------------------------------
 """
 
@@ -37,12 +24,36 @@ from dataclasses import dataclass
 
 @dataclass
 class DeltaRuleResult:
-    weights_history: list          # pesos por época
+    weights_history: list          # pesos (incluye bias) por época
     predictions_history: list      # y_hat por época (continuo)
     mse_history: list              # lista del error cuadrático medio por época
-    final_weights: np.ndarray      # pesos finales
+    final_weights: np.ndarray      # pesos finales (w0,...,wn)
     converged: bool                # si el error MSE alcanza un umbral
     convergence_epoch: int         # época de convergencia o -1
+
+
+# ============================================================
+# Utilidades internas
+# ============================================================
+
+def _augment_with_bias(X: np.ndarray) -> np.ndarray:
+    """Añade columna x0 = 1 a la matriz de entrada X."""
+    N = X.shape[0]
+    bias = np.ones((N, 1), dtype=float)
+    return np.hstack((bias, X.astype(float)))
+
+
+def _to_zero_one_targets(y: np.ndarray) -> np.ndarray:
+    """
+    Convierte objetivos en {-1,1} a {0,1} si aplica.
+    Si ya están en [0,1] se dejan igual.
+    """
+    y = y.reshape(-1).astype(float)
+    unique = np.unique(y)
+    if set(np.round(unique).tolist()) <= {-1.0, 1.0}:
+        # mapeo estándar: -1 → 0, +1 → 1
+        return (y + 1.0) / 2.0
+    return y
 
 
 # ============================================================
@@ -65,13 +76,14 @@ def train_delta_rule(
     X : np.ndarray (N x n)
         Datos de entrada.
     y : np.ndarray (N x 1)
-        Vector objetivo con valores {-1, +1}.
+        Vector objetivo (se normaliza internamente a {0,1}).
     learning_rate : float
         Tasa de aprendizaje η.
     max_epochs : int
         Máximo número de épocas.
     initial_weights : np.ndarray | None
-        Pesos iniciales.
+        Pesos iniciales (w0,...,wn). Si se proporcionan sólo n pesos,
+        se asume w0 = 0.
     threshold : float
         MSE mínimo requerido para considerar convergencia.
 
@@ -80,19 +92,34 @@ def train_delta_rule(
     DeltaRuleResult
     """
 
-    # Aplanar y
-    y = y.reshape(-1)
-    N, n = X.shape
+    # Objetivos en {0,1}
+    y_target = _to_zero_one_targets(y)
+    y_target = y_target.reshape(-1)
+
+    # Augmentar entradas con bias
+    Xb = _augment_with_bias(X)
+    N, n_plus_1 = Xb.shape
 
     # inicialización de pesos
     if initial_weights is None:
-        w = np.random.uniform(-0.5, 0.5, size=n)
+        w = np.random.uniform(-0.5, 0.5, size=n_plus_1)
     else:
-        w = np.array(initial_weights, dtype=float).reshape(n)
+        iw = np.array(initial_weights, dtype=float).reshape(-1)
+        if iw.size == n_plus_1:
+            w = iw
+        elif iw.size == n_plus_1 - 1:
+            w = np.zeros(n_plus_1, dtype=float)
+            w[1:] = iw
+        else:
+            raise ValueError(
+                f"Dimensión de INITIAL_WEIGHTS incompatible: "
+                f"se esperaban {n_plus_1} valores (o {n_plus_1 - 1} sin bias), "
+                f"pero se recibieron {iw.size}."
+            )
 
-    weights_history = []
-    predictions_history = []
-    mse_history = []
+    weights_history: list[np.ndarray] = []
+    predictions_history: list[np.ndarray] = []
+    mse_history: list[float] = []
 
     converged = False
     convergence_epoch = -1
@@ -105,11 +132,11 @@ def train_delta_rule(
         weights_history.append(w.copy())
 
         # Predicciones continuas (sin función escalón)
-        y_hat = X @ w
+        y_hat = Xb @ w
         predictions_history.append(y_hat.copy())
 
         # Error cuadrático medio
-        mse = np.mean((y - y_hat) ** 2)
+        mse = float(np.mean((y_target - y_hat) ** 2))
         mse_history.append(mse)
 
         # ¿Convergencia?
@@ -119,8 +146,8 @@ def train_delta_rule(
             break
 
         # Actualización de pesos (regla delta)
-        # w = w + η * Σ (y - ŷ) x
-        grad = (y - y_hat).reshape(-1, 1) * X
+        # w = w + η * Σ (t - o) x
+        grad = (y_target - y_hat).reshape(-1, 1) * Xb
         w = w + learning_rate * grad.sum(axis=0)
 
     final_weights = w.copy()

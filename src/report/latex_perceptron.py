@@ -16,50 +16,48 @@ from src.report.report_latex import escape_latex, dataframe_to_latex_table
 def build_perceptron_block(result, df, X_cols, Y_col,
                            lr, threshold, initial_weights, max_epochs):
 
-    # ------------------------------------------------------------
-    # Datos del modelo
-    # ------------------------------------------------------------
     W_final = result.final_weights
     W_history = result.weights_history
     error_history = result.error_history
     convergence_epoch = result.convergence_epoch
     converged = result.converged
 
-    # ------------------------------------------------------------
-    # Formateo
-    # ------------------------------------------------------------
     w_final_fmt = ",\\, ".join(f"{v:.3f}" for v in W_final)
 
-    # Historial de pesos por época
     w_hist_lines = []
     for i, w in enumerate(W_history):
         w_str = ", ".join(f"{v:.3f}" for v in w)
         w_hist_lines.append(f"Epoch {i}: [{w_str}]")
     w_hist_fmt = "\n".join(w_hist_lines)
 
-    # Tabla previa del dataset
     df_preview = dataframe_to_latex_table(
         df,
         caption=f"Vista previa del dataset ({escape_latex(Y_col)})"
     )
 
-    # Historial de errores
     err_fmt = "\n".join(f"Epoch {i}: errores = {e}" for i, e in enumerate(error_history))
 
-    # Convergencia
     conv_text = (
         f"La red convergió en la época {convergence_epoch}."
         if converged else
         "La red **no** convergió."
     )
 
-    # ------------------------------------------------------------
-    # Construcción del bloque LaTeX
-    # ------------------------------------------------------------
     latex = f"""
 % ------------------------------------------------------------
 \\section*{{Perceptrón — Tabla {escape_latex(Y_col)} }}
 % ------------------------------------------------------------
+
+\\textbf{{Función del perceptrón.}}\\\\
+Una función de perceptrón $o$ se define de la siguiente manera:
+
+\\[
+o(x_1, x_2, \\ldots, x_n) =
+\\begin{{cases}}
+1 & \\text{{si }} w_0 + w_1 x_1 + \\cdots + w_n x_n > 0 \\\\
+-1 & \\text{{en otro caso}}
+\\end{{cases}}
+\\]
 
 \\subsection*{{Parámetros del experimento}}
 \\begin{{itemize}}
@@ -79,14 +77,14 @@ def build_perceptron_block(result, df, X_cols, Y_col,
 \\end{{itemize}}
 
 \\subsection*{{Historial de pesos por época}}
-\\begin{{verbatim}}
+\\begin{{Verbatim}}[breaklines=true, fontsize=\\scriptsize]
 {w_hist_fmt}
-\\end{{verbatim}}
+\\end{{Verbatim}}
 
 \\subsection*{{Historial de errores por época}}
-\\begin{{verbatim}}
+\\begin{{Verbatim}}[breaklines=true, fontsize=\\scriptsize]
 {err_fmt}
-\\end{{verbatim}}
+\\end{{Verbatim}}
 
 \\vspace{{0.6cm}}
 """

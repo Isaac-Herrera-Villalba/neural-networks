@@ -4,15 +4,6 @@
 src/report/latex_backprop.py
 ------------------------------------------------------------
 Bloque LaTeX para Backpropagation (MLP con 1 capa oculta).
-
-Compatible con:
-    MLPBackpropResult.hidden_weights_history
-    MLPBackpropResult.output_weights_history
-    MLPBackpropResult.hidden_layer_history
-    MLPBackpropResult.output_history
-    MLPBackpropResult.mse_history
-    MLPBackpropResult.final_hidden_weights
-    MLPBackpropResult.final_output_weights
 ------------------------------------------------------------
 """
 
@@ -21,11 +12,7 @@ import numpy as np
 from src.report.report_latex import escape_latex, dataframe_to_latex_table
 
 
-# ============================================================
-#   Formateador auxiliar para matrices y vectores
-# ============================================================
 def _fmt_matrix(M):
-    """Convierte una matriz o vector numpy en bloques LaTeX."""
     if M.ndim == 1:
         return " \\\\ ".join(f"{v:.4f}" for v in M)
 
@@ -35,15 +22,9 @@ def _fmt_matrix(M):
     return "\n".join(rows)
 
 
-# ============================================================
-#   Construcción del bloque LaTeX
-# ============================================================
 def build_backprop_block(result, df, X_cols, Y_col,
                          lr, hidden_neurons, max_epochs):
 
-    # ------------------------------------------------------------
-    # Recuperar datos del resultado
-    # ------------------------------------------------------------
     W_hidden_final = result.final_hidden_weights
     W_output_final = result.final_output_weights
     mse_history = result.mse_history
@@ -51,20 +32,16 @@ def build_backprop_block(result, df, X_cols, Y_col,
     converged = result.converged
     convergence_epoch = result.convergence_epoch
 
-    # Alimentación al dataset
     df_preview = dataframe_to_latex_table(
-        df, caption=f"Vista previa del dataset (Backprop — {escape_latex(Y_col)})"
+        df,
+        caption=f"Vista previa del dataset (Backprop — {escape_latex(Y_col)})"
     )
 
-    # ------------------------------------------------------------
-    # Historial de MSE
-    # ------------------------------------------------------------
-    mse_fmt = "\n".join(f"Epoch {i}: MSE = {m:.6f}"
-                        for i, m in enumerate(mse_history))
+    mse_fmt = "\n".join(
+        f"Epoch {i}: MSE = {m:.6f}"
+        for i, m in enumerate(mse_history)
+    )
 
-    # ------------------------------------------------------------
-    # Historial de pesos por época
-    # ------------------------------------------------------------
     hidden_w_hist = []
     for i, W in enumerate(result.hidden_weights_history):
         m = ", ".join("[" + ", ".join(f"{v:.4f}" for v in row) + "]" for row in W)
@@ -77,18 +54,12 @@ def build_backprop_block(result, df, X_cols, Y_col,
         output_w_hist.append(f"Epoch {i}: [{m}]")
     output_w_hist_fmt = "\n".join(output_w_hist)
 
-    # ------------------------------------------------------------
-    # Convergencia
-    # ------------------------------------------------------------
     conv_text = (
         f"La red convergió en la época {convergence_epoch}."
         if converged else
         "La red **no** convergió dentro del número máximo de épocas."
     )
 
-    # ------------------------------------------------------------
-    # Generación del bloque LaTeX
-    # ------------------------------------------------------------
     latex = f"""
 % ============================================================
 \\section*{{Backpropagation (MLP) — Tabla {escape_latex(Y_col)} }}
@@ -126,19 +97,19 @@ W_{{output}} =
 {conv_text}
 
 \\subsection*{{Historial del Error (MSE por época)}}
-\\begin{{verbatim}}
+\\begin{{Verbatim}}[breaklines=true, fontsize=\\scriptsize]
 {mse_fmt}
-\\end{{verbatim}}
+\\end{{Verbatim}}
 
 \\subsection*{{Historial de pesos — Capa oculta}}
-\\begin{{verbatim}}
+\\begin{{Verbatim}}[breaklines=true, fontsize=\\scriptsize]
 {hidden_w_hist_fmt}
-\\end{{verbatim}}
+\\end{{Verbatim}}
 
 \\subsection*{{Historial de pesos — Capa de salida}}
-\\begin{{verbatim}}
+\\begin{{Verbatim}}[breaklines=true, fontsize=\\scriptsize]
 {output_w_hist_fmt}
-\\end{{verbatim}}
+\\end{{Verbatim}}
 
 \\vspace{{0.6cm}}
 """

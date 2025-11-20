@@ -46,7 +46,6 @@ def escape_latex(text: str) -> str:
 # CONVERTIR DATAFRAME A TABLA LATEX
 # ============================================================
 
-
 def dataframe_to_latex_table(df: pd.DataFrame, caption: str | None = None, max_rows: int = 20) -> str:
     """
     Convierte un DataFrame en una tabla LaTeX sin usar pandas.to_latex()
@@ -59,7 +58,6 @@ def dataframe_to_latex_table(df: pd.DataFrame, caption: str | None = None, max_r
     df2 = df.head(max_rows).copy()
     df2 = df2.applymap(escape_latex)
 
-    # -------- Construcción manual de tabla LaTeX --------
     cols = list(df2.columns)
     header = " & ".join(cols) + r" \\ \hline"
 
@@ -71,7 +69,7 @@ def dataframe_to_latex_table(df: pd.DataFrame, caption: str | None = None, max_r
     table_latex = (
         r"\begin{table}[H]" "\n"
         r"\centering" "\n"
-        r"\begin{tabular}{|" + "c|"*len(cols) + "}" "\n"
+        r"\begin{tabular}{|" + "c|" * len(cols) + "}" "\n"
         r"\hline" "\n"
         + header + "\n"
         + body + "\n"
@@ -109,33 +107,31 @@ def render_all_instances_pdf(output_pdf_path: str, latex_body: str):
 
     tex_path = output_dir / output_pdf_path.with_suffix(".tex").name
 
-    # Documento LaTeX completo
     latex_full = r"""
 \documentclass[12pt]{article}
 \usepackage[spanish]{babel}
+\decimalpoint
 \usepackage{amsmath, amssymb}
 \usepackage[a4paper,margin=2cm]{geometry}
 \usepackage{booktabs}
 \usepackage{array}
 \usepackage{graphicx}
 \usepackage{float}
+\usepackage{fancyvrb}
 
 \begin{document}
 """ + latex_body + r"""
 \end{document}
 """
 
-    # Guardar .tex
     tex_path.write_text(latex_full, encoding="utf-8")
 
-    # Compilar PDF
     cmd = [
         "pdflatex",
         "-interaction=nonstopmode",
         tex_path.name
     ]
 
-    # Ejecutar pdflatex dentro del output/
     subprocess.run(cmd, cwd=output_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     return str(output_pdf_path)
