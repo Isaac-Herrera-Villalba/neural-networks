@@ -80,7 +80,7 @@ DATASET = data/dataset.ods
 SHEET = Sheet4
 
 X_COLS = x1, x2, x3
-Y_COL  = Y
+Y_COL  = Y1
 
 LEARNING_RATE = 0.5
 MAX_EPOCHS = 40
@@ -97,7 +97,7 @@ DATASET = data/dataset.ods
 SHEET = Sheet5
 
 X_COLS = x1, x2, x3, x4
-Y_COL  = Y
+Y_COL  = Y2
 
 LEARNING_RATE = 0.5
 MAX_EPOCHS = 40
@@ -113,7 +113,7 @@ DATASET = data/dataset.ods
 SHEET = Sheet6
 
 X_COLS = x1, x2, x3, x4, x5
-Y_COL  = Y
+Y_COL  = Y3
 
 LEARNING_RATE = 0.5
 MAX_EPOCHS = 50
@@ -129,7 +129,7 @@ DATASET = data/dataset.ods
 SHEET = Sheet7
 
 X_COLS = x1, x2, x3, x4, x5
-Y_COL  = Y
+Y_COL  = Y4
 
 LEARNING_RATE = 0.5
 MAX_EPOCHS = 50
