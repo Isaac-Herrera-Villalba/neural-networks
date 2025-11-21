@@ -1,99 +1,33 @@
-# input.txt
 # ============================================================================
-# Proyecto: Neural Networks (Perceptrón / Regla Delta / MLP Backpropagation)
-# Dataset lógico: AND, XOR, BICONDITIONAL (↔)
+# Proyecto: Neural Networks — Perceptrón Simple
 # ============================================================================
-# Este archivo define qué hoja del archivo dataset.ods debe procesarse y
-# qué método de redes neuronales se aplicará.
+# Este archivo define qué hoja del dataset debe procesarse y cuál red neuronal
+# se utilizará. En este proyecto únicamente se implementa el PERCEPTRÓN SIMPLE,
+# siguiendo el material visto en clase ("Learning Perceptrons", diapositivas 1–8).
 #
-# Estructura soportada:
-#   DATASET            = ruta del archivo .ods / .csv / .xlsx
-#   SHEET              = nombre de la hoja del archivo
-#   METHOD             = PERCEPTRON | DELTA_RULE | MLP_BACKPROP
-#   X_COLS             = columnas de entrada (X)
-#   Y_COL              = columna objetivo
+# Estructura de cada bloque:
+#   NN                  = PERCEPTRON
+#   DATASET             = ruta del archivo .ods / .csv / .xlsx
+#   SHEET               = nombre de la hoja del archivo
+#   X_COLS              = columnas de entrada (variables x)
+#   Y_COL               = columna objetivo (variable y)
+#   LEARNING_RATE       = tasa de aprendizaje
+#   MAX_EPOCHS          = épocas máximas
 #
-# Comentarios:
+# Comentarios válidos:
 #   #   → comentario de línea
 #   /*  → inicio de comentario de bloque
 #   */  → fin de comentario de bloque
+#
+# NOTA:
+#   Cada bloque ejecuta un perceptrón independiente y genera su propio
+#   apartado dentro del reporte LaTeX final.
 # ============================================================================
 
 
-## ─────────────────────────────────────────────────────────────
-## BLOQUE 1 — Perceptrón entrenando tabla AND (Sheet1)
-## ─────────────────────────────────────────────────────────────
-#DATASET = data/dataset.ods
-#SHEET = Sheet1
-#METHOD = PERCEPTRON
-#
-#X_COLS = x1, x2
-#Y_COL  = AND
-#
-#LEARNING_RATE = 0.5
-#MAX_EPOCHS    = 30
-#
-#/*  
-#Salida esperada del perceptrón:
-#Debe aprender la función AND y converger rápidamente.
-#*/
-#
-#
-## ─────────────────────────────────────────────────────────────
-## BLOQUE 2 — Regla Delta entrenando XOR (Sheet2)
-## ─────────────────────────────────────────────────────────────
-#DATASET = data/dataset.ods
-#SHEET = Sheet2
-#METHOD = DELTA_RULE
-#
-#X_COLS = x1, x2
-#Y_COL  = XOR
-#
-#LEARNING_RATE = 0.5
-#MAX_EPOCHS    = 50
-#
-#/*  
-#La regla delta NO puede resolver XOR
-#ya que es linealmente inseparable.
-#El reporte debe demostrar matemáticamente la no convergencia.
-#*/
-#
-#
-## ─────────────────────────────────────────────────────────────
-## BLOQUE 3 — Perceptrón entrenando BICONDITIONAL (↔) (Sheet3)
-## ─────────────────────────────────────────────────────────────
-#DATASET = data/dataset.ods
-#SHEET = Sheet3
-#METHOD = PERCEPTRON
-#
-#X_COLS = x1, x2
-#Y_COL  = ↔     # será normalizado automáticamente a "BICONDITIONAL"
-#
-#LEARNING_RATE = 0.5
-#MAX_EPOCHS    = 30
-#
-#/*
-#La función ↔ (bicondicional) SÍ es linealmente separable.
-#El perceptrón debe converger.
-#*/
-
-
-
-
-
-
-
-
-
-
-
-# ============================================================================
-# Neural Networks — Perceptron / Delta Rule / MLP Backprop
-# ============================================================================
-
-# -------------------------
-# BLOQUE 1 — Perceptrón AND
-# -------------------------
+# ============================================================
+# BLOQUE 1 — Tabla AND (2 variables) — Converge
+# ============================================================
 NN = PERCEPTRON
 DATASET = data/dataset.ods
 SHEET = Sheet1
@@ -104,15 +38,12 @@ Y_COL  = AND
 LEARNING_RATE = 0.5
 MAX_EPOCHS = 30
 
-/*
-Salida esperada:
-El perceptrón debe aprender AND (linealmente separable).
-*/
 
-# -------------------------
-# BLOQUE 2 — Delta Rule XOR
-# -------------------------
-NN = DELTA_RULE
+
+# ============================================================
+# BLOQUE 2 — Tabla XOR (2 variables) — NO Converge
+# ============================================================
+NN = PERCEPTRON
 DATASET = data/dataset.ods
 SHEET = Sheet2
 
@@ -120,16 +51,13 @@ X_COLS = x1, x2
 Y_COL  = XOR
 
 LEARNING_RATE = 0.5
-MAX_EPOCHS = 50
+MAX_EPOCHS = 30
 
-/*
-La regla delta NO puede resolver XOR
-(linealmente inseparable).
-*/
 
-# -------------------------
-# BLOQUE 3 — Perceptrón BICONDITIONAL
-# -------------------------
+
+# ============================================================
+# BLOQUE 3 — Tabla BICONDITIONAL (↔) — Converge
+# ============================================================
 NN = PERCEPTRON
 DATASET = data/dataset.ods
 SHEET = Sheet3
@@ -140,8 +68,69 @@ Y_COL  = ↔
 LEARNING_RATE = 0.5
 MAX_EPOCHS = 30
 
-/*
-El operador ↔ es linealmente separable.
-El perceptrón debe converger.
-*/
+
+
+# ============================================================
+# BLOQUE 4 — Ejemplo con más columnas y filas (3 variables) — Converge
+# Sheet4 debe contener el dataset:
+# (x1 x2 x3 Y) con 6 filas
+# ============================================================
+NN = PERCEPTRON
+DATASET = data/dataset.ods
+SHEET = Sheet4
+
+X_COLS = x1, x2, x3
+Y_COL  = Y
+
+LEARNING_RATE = 0.5
+MAX_EPOCHS = 40
+
+
+
+# ============================================================
+# BLOQUE 5 — Ejemplo más grande (4 variables) — Converge
+# Sheet5 debe contener el dataset:
+# (x1 x2 x3 x4 Y) con 10 filas
+# ============================================================
+NN = PERCEPTRON
+DATASET = data/dataset.ods
+SHEET = Sheet5
+
+X_COLS = x1, x2, x3, x4
+Y_COL  = Y
+
+LEARNING_RATE = 0.5
+MAX_EPOCHS = 40
+
+
+
+# ============================================================
+# BLOQUE 6 — Ejemplo grande (5 variables, 16 filas) — Converge
+# Sheet6 debe contener el dataset SEPARABLE (el ejemplo 3)
+# ============================================================
+NN = PERCEPTRON
+DATASET = data/dataset.ods
+SHEET = Sheet6
+
+X_COLS = x1, x2, x3, x4, x5
+Y_COL  = Y
+
+LEARNING_RATE = 0.5
+MAX_EPOCHS = 50
+
+
+
+# ============================================================
+# BLOQUE 7 — Mismo tamaño que Bloque 6, pero NO Converge
+# Sheet7 debe contener el dataset NO SEPARABLE (ejemplo 4)
+# ============================================================
+NN = PERCEPTRON
+DATASET = data/dataset.ods
+SHEET = Sheet7
+
+X_COLS = x1, x2, x3, x4, x5
+Y_COL  = Y
+
+LEARNING_RATE = 0.5
+MAX_EPOCHS = 50
 

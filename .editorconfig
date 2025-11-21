@@ -1,4 +1,4 @@
-# .editorconfig para linear-regression
+# .editorconfig para Neural Networks (Perceptrón Simple)
 # Mantiene un estilo consistente en código Python, LaTeX y archivos de configuración
 root = true
 
@@ -40,7 +40,6 @@ indent_size = 4
 [*.py]
 indent_style = space
 indent_size = 4
-# Compatible con Black pero con un poco más de margen para ecuaciones y docstrings largos
 max_line_length = 95
 trim_trailing_whitespace = true
 insert_final_newline = true
@@ -58,7 +57,6 @@ indent_style = space
 indent_size = 2
 trim_trailing_whitespace = true
 insert_final_newline = true
-# Líneas largas permitidas por fórmulas extensas
 max_line_length = 120
 
 ######################################

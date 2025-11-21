@@ -1,12 +1,8 @@
 # Makefile
 # -----------------------------------------------------------------------
 # Descripción:
-# Automatiza el flujo completo del proyecto **Neural Networks**.
-#
-# Métodos soportados:
-#   - Perceptrón
-#   - Regla Delta (ADALINE)
-#   - Backpropagation (MLP)
+# Automatiza el flujo completo del proyecto **Neural Networks** usando
+# exclusivamente el Perceptrón Simple de Rosenblatt.
 #
 # Flujo FULL (make full):
 #   1. Ejecutar input.txt (genera .tex desde src/main.py)

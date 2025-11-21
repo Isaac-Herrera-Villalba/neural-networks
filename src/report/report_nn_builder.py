@@ -2,194 +2,166 @@
 # -*- coding: utf-8 -*-
 """
 src/report/report_nn_builder.py
-------------------------------------------------------------
-Constructor central del reporte para:
+-------------------------------------------------------------------------------
+Constructor central del reporte final del proyecto.
 
- - Perceptrón
- - Regla Delta (ADALINE)
- - Backpropagation (MLP)
+Este módulo coordina todo el flujo de ejecución para cada bloque definido
+en input.txt:
 
-Recibe los bloques procesados por config.py (lista de dicts),
-ejecuta cada red neuronal, produce el bloque LaTeX correspondiente
-y finalmente genera un único PDF.
-------------------------------------------------------------
+    INPUT  →  load_dataset()  →  preprocess_numeric_dataset()
+           →  train_perceptron()  →  build_perceptron_block()
+           →  ensamblado final LaTeX  →  render_all_instances_pdf()
+
+-------------------------------------------------------------------------------
+Ámbito del proyecto
+-------------------
+El curso oficialmente abarca únicamente el *Perceptrón simple* de Rosenblatt.
+
+-------------------------------------------------------------------------------
+Responsabilidades de este módulo
+--------------------------------
+1. Interpretar cada bloque del archivo de configuración input.txt.
+2. Validar parámetros requeridos (NN, DATASET, SHEET, X_COLS, Y_COL, etc.).
+3. Cargar el dataset correspondiente usando loader.py.
+4. Preprocesar numéricamente las columnas indicadas.
+5. Entrenar el perceptrón simple con los hiperparámetros dados.
+6. Generar el bloque LaTeX correspondiente vía latex_perceptron.py.
+7. Unir todos los bloques generados en un solo documento PDF.
+
+Este módulo NO realiza cálculo matemático ni manipulación directa del modelo.
+-------------------------------------------------------------------------------
 """
 
 from __future__ import annotations
 import numpy as np
 from typing import List, Dict
 
-# NN modules
+# NN: solo perceptrón
 from src.nn.perceptron import train_perceptron
-from src.nn.delta_rule import train_delta_rule
-from src.nn.mlp_backprop import train_backpropagation
 
 # Preprocesamiento
 from src.core.data_extractor.loader import load_dataset
 from src.core.data_extractor.preprocess_numeric import preprocess_numeric_dataset
 
-# Latex blocks
+# Bloques LaTeX permitidos
 from src.report.latex_perceptron import build_perceptron_block
-from src.report.latex_delta import build_delta_rule_block
-from src.report.latex_backprop import build_backprop_block
 
-# PDF renderer
-from src.report.report_latex import render_all_instances_pdf, escape_latex
+# Render PDF final
+from src.report.report_latex import render_all_instances_pdf
 
 
-# ============================================================
-# Normalización de símbolos lógicos
-# ============================================================
 
-LOGIC_MAP = {
-    "↔": "BICONDITIONAL",
-    "<->": "BICONDITIONAL",
-    "<=>": "BICONDITIONAL",
-    "≡": "BICONDITIONAL",
-    "⇔": "BICONDITIONAL",
-
-    "⊕": "XOR",
-    "xor": "XOR",
-    "XOR": "XOR",
-
-    "∧": "AND",
-    "AND": "AND",
-
-    "∨": "OR",
-    "OR": "OR",
-}
-
-
-def normalize_symbol(s: str) -> str:
-    s = s.strip()
-    return LOGIC_MAP.get(s, s)
-
-
-# ============================================================
-# PROCESAR UN BLOQUE INDIVIDUAL
-# ============================================================
+# =============================================================================
+# FUNCIÓN: process_block
+# =============================================================================
 
 def process_block(block: Dict) -> str:
     """
-    Procesa un bloque del input.txt y devuelve el bloque LaTeX.
-    Si ocurre un error → se lanza excepción para ser capturada arriba.
+    Procesa un bloque del input.txt y retorna el LaTeX correspondiente.
+
+    Flujo:
+        1. Validar claves necesarias del bloque.
+        2. Verificar que el método sea PERCEPTRON.
+        3. Cargar dataset desde .ods/.xlsx/.csv.
+        4. Preprocesar columnas X y Y:
+              - conversión numérica,
+              - mapeos a {-1, 1},
+              - resolución robusta de nombres.
+        5. Entrenar perceptrón simple.
+        6. Construir bloque LaTeX.
+
+    Parámetros
+    ----------
+    block : Dict
+        Diccionario con las claves del bloque (ya limpiado por Config).
+
+    Retorna
+    -------
+    str
+        Código LaTeX generado para este bloque.
     """
 
-    # ------------------------------------------------------------
-    # Validación básica
-    # ------------------------------------------------------------
+    # --- Validación de claves obligatorias ---
     required = ["NN", "DATASET", "SHEET", "X_COLS", "Y_COL"]
     for r in required:
         if r not in block:
             raise RuntimeError(f"Falta parámetro obligatorio: {r}")
 
     method = block["NN"].strip().upper()
+    if method != "PERCEPTRON":
+        raise RuntimeError(
+            f"Método '{method}' no soportado. "
+            "Este proyecto solo implementa Perceptrón simple."
+        )
+
+    # --- Lectura de parámetros ---
     dataset_path = block["DATASET"].strip()
     sheet = block["SHEET"].strip()
 
-    # columnas X
     X_cols = [c.strip() for c in block["X_COLS"].split(",")]
+    Y_col = block["Y_COL"].strip()
 
-    # columna Y
-    Y_col = normalize_symbol(block["Y_COL"])
-
-    # hiperparámetros comunes
     lr = float(block.get("LEARNING_RATE", 0.1))
     max_epochs = int(block.get("MAX_EPOCHS", 20))
     threshold = float(block.get("THRESHOLD", 0.0))
-    hidden = int(block.get("HIDDEN_NEURONS", 2))
 
-    # pesos iniciales
+    # Pesos iniciales opcionales
     init_w = None
     if "INITIAL_WEIGHTS" in block:
-        init_w = np.array(
-            [float(v) for v in block["INITIAL_WEIGHTS"].split(",")]
-        )
+        init_w = np.array([
+            float(v)
+            for v in block["INITIAL_WEIGHTS"].split(",")
+        ])
 
-    # ------------------------------------------------------------
-    # Cargar dataset
-    # ------------------------------------------------------------
+    # --- Cargar dataset ---
     df = load_dataset(dataset_path, sheet=sheet)
 
-    # ------------------------------------------------------------
-    # Preprocesamiento (X, y)
-    # ------------------------------------------------------------
+    # --- Preprocesar columnas ---
     X, y = preprocess_numeric_dataset(df, X_cols, Y_col)
 
-    # ------------------------------------------------------------
-    # Selección del método NN
-    # ------------------------------------------------------------
-    if method == "PERCEPTRON":
-        result = train_perceptron(
-            X=X,
-            y=y,
-            learning_rate=lr,
-            max_epochs=max_epochs,
-            threshold=threshold,
-            initial_weights=init_w
-        )
+    # --- Entrenar perceptrón simple ---
+    result = train_perceptron(
+        X=X,
+        y=y,
+        learning_rate=lr,
+        max_epochs=max_epochs,
+        threshold=threshold,
+        initial_weights=init_w
+    )
 
-        return build_perceptron_block(
-            result=result,
-            df=df,
-            X_cols=X_cols,
-            Y_col=Y_col,
-            lr=lr,
-            threshold=threshold,
-            initial_weights=init_w,
-            max_epochs=max_epochs,
-        )
-
-    elif method in ["DELTA_RULE", "DELTA", "ADALINE"]:
-        result = train_delta_rule(
-            X=X,
-            y=y,
-            learning_rate=lr,
-            max_epochs=max_epochs,
-            initial_weights=init_w
-        )
-
-        return build_delta_rule_block(
-            result=result,
-            df=df,
-            X_cols=X_cols,
-            Y_col=Y_col,
-            lr=lr,
-            initial_weights=init_w,
-            max_epochs=max_epochs,
-        )
-
-    elif method in ["MLP", "BACKPROP", "BACKPROPAGATION"]:
-        result = train_backpropagation(
-            X=X,
-            y=y,
-            hidden_neurons=hidden,
-            learning_rate=lr,
-            max_epochs=max_epochs
-        )
-
-        return build_backprop_block(
-            result=result,
-            df=df,
-            X_cols=X_cols,
-            Y_col=Y_col,
-            lr=lr,
-            hidden_neurons=hidden,
-            max_epochs=max_epochs
-        )
-
-    else:
-        raise RuntimeError(f"Método NN desconocido: {method}")
+    # --- Construir bloque LaTeX del perceptrón ---
+    return build_perceptron_block(
+        result=result,
+        df=df,
+        X_cols=X_cols,
+        Y_col=Y_col,
+        lr=lr,
+        threshold=threshold,
+        initial_weights=init_w,
+        max_epochs=max_epochs
+    )
 
 
-# ============================================================
-# ENSAMBLADO COMPLETO DEL REPORTE
-# ============================================================
+
+# =============================================================================
+# FUNCIÓN: build_full_report
+# =============================================================================
 
 def build_full_report(blocks: List[Dict]):
     """
-    Procesa secuencialmente todos los bloques y genera
-    un único PDF final.
+    Procesa todos los bloques PERCEPTRON y genera un PDF consolidado.
+
+    Parámetros
+    ----------
+    blocks : List[Dict]
+        Lista de diccionarios producidos por Config.get_blocks(),
+        donde cada diccionario representa un bloque de input.txt.
+
+    Retorna
+    -------
+    (latex, pdf_path) : Tuple[str, str]
+        - Código LaTeX generado.
+        - Ruta final del PDF.
     """
 
     final_latex = ""
@@ -197,19 +169,18 @@ def build_full_report(blocks: List[Dict]):
 
     print(f"[INFO] {len(blocks)} bloques detectados")
 
-    # recorrer bloques
+    # Procesar secuencialmente cada bloque
     for idx, blk in enumerate(blocks, start=1):
         print(f"\n=== BLOQUE {idx}: MÉTODO {blk.get('NN', '').upper()} ===")
 
         try:
             block_tex = process_block(blk)
             final_latex += block_tex + "\n\n"
-
         except Exception as e:
-            print(f"[ERROR] Fallo generando LaTeX en bloque {idx}: {e}")
+            print(f"[ERROR] Fallo generando bloque {idx}: {e}")
 
     if not final_latex.strip():
-        print("[WARN] No hay contenido válido para PDF.")
+        print("[WARN] No se produjo contenido LaTeX.")
         return
 
     print(f"[INFO] PDF final: {pdf_path}")

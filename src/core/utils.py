@@ -3,46 +3,62 @@
 
 """
 src/core/utils.py
-------------------------------------------------------------
-Descripción:
-Módulo de utilidades generales para el sistema de Redes
-Neuronales y módulos auxiliares relacionados.
+-------------------------------------------------------------------------------
+Módulo de utilidades generales para el sistema Neural Networks
+-------------------------------------------------------------------------------
 
-Incluye:
-- Normalización de nombres de columnas.
-- Normalización de símbolos lógicos (Unicode, ASCII, variantes
-  tipográficas y textuales).
-- Conversión robusta de valores booleanos.
-- Impresión compacta de diccionarios.
+Descripción general
+-------------------
+Este módulo contiene funciones auxiliares utilizadas en diferentes fases del
+sistema: carga de datasets, preprocesamiento, normalización de símbolos
+lógicos, análisis de configuración e impresión de estructuras internas.
+
+Su propósito es garantizar que:
+  • Los encabezados de columnas provenientes de archivos .ods/.xlsx/.csv
+    se traduzcan a nombres ASCII consistentes.
+  • Los símbolos lógicos (↔, ⊕, ∧, ∨, etc.) puedan ser interpretados de
+    forma uniforme por el perceptrón.
+  • Los parámetros booleanos del input.txt se interpreten de forma robusta.
+  • La impresión de diccionarios internos sea compacta y amigable.
 
 Este módulo es consumido por:
-- src/core/config.py           (parser de input.txt)
-- src/core/data_extractor      (loader y preprocesamiento)
-- src/nn/                      (módulos perceptrón / delta / MLP)
-- src/report/                  (generación LaTeX)
+  - src/core/config.py                → parser de input.txt
+  - src/core/data_extractor/*         → loader y preprocesamiento numérico
+  - src/nn/perceptron.py              → entrenamiento del perceptrón
+  - src/report/*                      → generación dinámica de reportes LaTeX
 
-Este módulo garantiza que los símbolos lógicos presentes en:
-- columnas de .ods / .xlsx
-- parámetros X_COLS y Y_COLS en input.txt
-
-se conviertan a identificadores ASCII seguros sin modificar los
-archivos originales.
-------------------------------------------------------------
+-------------------------------------------------------------------------------
 """
 
 from __future__ import annotations
 from typing import Dict, Any
 
 
-# ============================================================
-# === MAPA DE SÍMBOLOS LÓGICOS NORMALIZADOS ==================
-# ============================================================
+# =============================================================================
+# === MAPA DE SÍMBOLOS LÓGICOS NORMALIZADOS ==================================
+# =============================================================================
+"""
+Este diccionario permite convertir múltiples representaciones tipográficas
+y textuales de operadores lógicos en un identificador ASCII estándar.
 
+Ejemplos:
+
+    • "↔", "⇔", "<->", "<=>"       → "BICONDITIONAL"
+    • "⊕", "^", "exclusive-or"     → "XOR"
+    • "∧", "&", "&&"               → "AND"
+    • "∨", "|"                     → "OR"
+    • "¬", "~", "!"                → "NOT"
+    • "→", "=>"                    → "IMPLIES"
+
+Esto es necesario porque los datasets pueden contener encabezados expresados
+con símbolos Unicode, pero internamente es preferible trabajar con nombres
+ASCII uniformes.
+"""
 LOGIC_SYMBOL_MAP = {
 
-    # ===============================================================
-    # BICONDITIONAL  (↔, <->, <=>, ⇔, ≡, ⟺, ⟷)
-    # ===============================================================
+    # -------------------------------------------------------------------------
+    # BICONDITIONAL  (↔, ⇔, ≡, <=>, ...)
+    # -------------------------------------------------------------------------
     "↔": "BICONDITIONAL",
     "⇔": "BICONDITIONAL",
     "⇿": "BICONDITIONAL",
@@ -64,9 +80,9 @@ LOGIC_SYMBOL_MAP = {
     "eqv": "BICONDITIONAL",
     "xnor": "BICONDITIONAL",
 
-    # ===============================================================
-    # XOR (⊕, ⊻, ^, exclusive-or)
-    # ===============================================================
+    # -------------------------------------------------------------------------
+    # XOR (⊕, ⊻, ^, exclusive-or, ...)
+    # -------------------------------------------------------------------------
     "⊕": "XOR",
     "⨁": "XOR",
     "⊻": "XOR",
@@ -78,9 +94,9 @@ LOGIC_SYMBOL_MAP = {
     "exclusive-or": "XOR",
     "exclusive or": "XOR",
 
-    # ===============================================================
-    # AND (∧, &, &&, ⋀)
-    # ===============================================================
+    # -------------------------------------------------------------------------
+    # AND (∧, &, &&, ...)
+    # -------------------------------------------------------------------------
     "∧": "AND",
     "&": "AND",
     "&&": "AND",
@@ -91,9 +107,9 @@ LOGIC_SYMBOL_MAP = {
     "logical-and": "AND",
     "logical and": "AND",
 
-    # ===============================================================
-    # OR (∨, |, ||, ⋁)
-    # ===============================================================
+    # -------------------------------------------------------------------------
+    # OR (∨, |, ||, ...)
+    # -------------------------------------------------------------------------
     "∨": "OR",
     "|": "OR",
     "||": "OR",
@@ -104,9 +120,9 @@ LOGIC_SYMBOL_MAP = {
     "logical-or": "OR",
     "logical or": "OR",
 
-    # ===============================================================
-    # NOT (¬, ~, !, neg)
-    # ===============================================================
+    # -------------------------------------------------------------------------
+    # NOT (¬, ~, !)
+    # -------------------------------------------------------------------------
     "¬": "NOT",
     "~": "NOT",
     "!": "NOT",
@@ -115,9 +131,9 @@ LOGIC_SYMBOL_MAP = {
     "neg": "NOT",
     "negation": "NOT",
 
-    # ===============================================================
-    # IMPLICATION  (→, ⇒, ⟹, ->, =>, -->)
-    # ===============================================================
+    # -------------------------------------------------------------------------
+    # IMPLICATION (→, ⇒, ->, =>, ...)
+    # -------------------------------------------------------------------------
     "→": "IMPLIES",
     "⇒": "IMPLIES",
     "⟹": "IMPLIES",
@@ -129,17 +145,17 @@ LOGIC_SYMBOL_MAP = {
     "implies": "IMPLIES",
     "implication": "IMPLIES",
 
-    # ===============================================================
+    # -------------------------------------------------------------------------
     # NAND
-    # ===============================================================
+    # -------------------------------------------------------------------------
     "↑": "NAND",
     "nand": "NAND",
     "!and": "NAND",
     "not and": "NAND",
 
-    # ===============================================================
+    # -------------------------------------------------------------------------
     # NOR
-    # ===============================================================
+    # -------------------------------------------------------------------------
     "↓": "NOR",
     "nor": "NOR",
     "!or": "NOR",
@@ -147,49 +163,42 @@ LOGIC_SYMBOL_MAP = {
 }
 
 
-# ============================================================
-# === FUNCIÓN: Normalización de símbolos lógicos ==============
-# ============================================================
+# =============================================================================
+# === NORMALIZACIÓN DE SÍMBOLOS LÓGICOS ======================================
+# =============================================================================
 
 def normalize_logic_symbol(name: str) -> str:
     """
-    Normaliza símbolos lógicos o etiquetas provenientes del dataset o input.txt,
-    convirtiéndolos a nombres ASCII seguros.
-
-    Ejemplos:
-        ↔     -> BICONDITIONAL
-        <=>   -> BICONDITIONAL
-        ⊕     -> XOR
-        ∧     -> AND
-        ¬     -> NOT
-        →     -> IMPLIES
+    Normaliza un símbolo lógico (Unicode o textual) a un identificador ASCII.
 
     Parámetros
     ----------
     name : str
-        Nombre original de la columna o parámetro.
+        Cadena original proveniente del dataset o del input.txt.
 
     Retorna
     -------
     str
-        Nombre ASCII seguro normalizado, o el original si no pertenece al mapa.
+        Símbolo normalizado según LOGIC_SYMBOL_MAP, o el original si
+        no está contemplado en el mapa.
     """
     if not isinstance(name, str):
         return name
 
+    # Limpieza base
     cleaned = name.strip().lower()
     cleaned = " ".join(cleaned.split())
 
-    # coincidencia exacta
+    # Coincidencia directa
     if cleaned in LOGIC_SYMBOL_MAP:
         return LOGIC_SYMBOL_MAP[cleaned]
 
-    # eliminar espacios internos
+    # Quitar espacios internos
     cleaned_no_space = cleaned.replace(" ", "")
     if cleaned_no_space in LOGIC_SYMBOL_MAP:
         return LOGIC_SYMBOL_MAP[cleaned_no_space]
 
-    # eliminar '-' y '_'
+    # Quitar símbolos '-' y '_' para permitir variantes como "exclusive_or"
     cleaned_simple = cleaned.replace("-", "").replace("_", "")
     if cleaned_simple in LOGIC_SYMBOL_MAP:
         return LOGIC_SYMBOL_MAP[cleaned_simple]
@@ -197,68 +206,71 @@ def normalize_logic_symbol(name: str) -> str:
     return name
 
 
-# ============================================================
-# === FUNCIÓN: Normalización de nombres de columnas ===========
-# ============================================================
+# =============================================================================
+# === NORMALIZACIÓN DE NOMBRES DE COLUMNAS ===================================
+# =============================================================================
 
 def normalize_colnames(cols) -> list[str]:
     """
-    Normaliza nombres de columnas del dataset.
+    Normaliza una lista de nombres de columnas provenientes de un DataFrame.
 
-    - Aplica normalización lógica si corresponde.
-    - Mantiene el nombre original si no es un símbolo lógico.
-    - Evita modificar el archivo .ods, solo actúa en memoria.
+    - Si un nombre es un operador lógico Unicode o ASCII → lo convierte.
+    - Si no corresponde a ningún símbolo lógico → lo mantiene igual.
 
     Parámetros
     ----------
     cols : iterable
-        Lista de columnas del DataFrame.
+        Colección de nombres de columnas.
 
     Retorna
     -------
     list[str]
-        Lista procesada de nombres.
+        Nombres normalizados.
     """
     normalized = []
     for c in cols:
-        c2 = normalize_logic_symbol(str(c))
-        normalized.append(c2)
+        normalized.append(normalize_logic_symbol(str(c)))
     return normalized
 
 
-# ============================================================
-# === FUNCIÓN: Conversión robusta de booleanos ===============
-# ============================================================
+# =============================================================================
+# === CONVERSIÓN ROBUSTA DE BOOLEANOS ========================================
+# =============================================================================
 
 def parse_bool(s: str) -> bool:
     """
-    Convierte cadena textual a booleano.
+    Convierte una cadena textual en un valor booleano estándar.
 
-    True si:
-        "1", "true", "yes", "y", "t", "si", "sí"
+    True si s es una de:
+        {"1", "true", "yes", "y", "t", "si", "sí"}
 
     False en cualquier otro caso.
+
+    Esta función es útil para parámetros opcionales en el input.txt.
     """
     return str(s).strip().lower() in {"1", "true", "yes", "y", "t", "si", "sí"}
 
 
-# ============================================================
-# === FUNCIÓN: Impresión compacta de diccionarios ============
-# ============================================================
+# =============================================================================
+# === IMPRESIÓN COMPACTA DE DICCIONARIOS =====================================
+# =============================================================================
 
 def dotted(d: Dict[str, Any]) -> str:
     """
-    Imprime un diccionario como: k=v, k=v, ...
+    Devuelve un diccionario en formato compacto `k=v, k=v, ...`.
+
+    Útil para depuración y visualización resumida de bloques
+    parseados en el input.txt.
 
     Parámetros
     ----------
     d : Dict[str, Any]
-        Diccionario a procesar.
+        Diccionario a imprimir.
 
     Retorna
     -------
     str
-        Formato compacto de pares clave-valor.
+        Representación compacta.
     """
     return ", ".join(f"{k}={v}" for k, v in d.items())
 
