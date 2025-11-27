@@ -187,6 +187,13 @@ o(x_1, x_2, \\ldots, x_n) =
 w_i \\leftarrow w_i + \\Delta w_i
 \\]
 
+Donde:
+\\begin{{itemize}}
+    \\item $\\eta$ es la tasa de aprendizaje.
+    \\item $t$ es la clasificación objetivo.
+    \\item $o$ es la clasificación actual.
+\\end{{itemize}}
+
 \\subsection*{{3. Algoritmo de entrenamiento}}
 \\begin{{enumerate}}
     \\item Inicializar pesos.
@@ -201,7 +208,6 @@ w_i \\leftarrow w_i + \\Delta w_i
 \\subsection*{{4. Parámetros del experimento}}
 \\begin{{itemize}}
   \\item Tasa de aprendizaje: $\\eta = {lr}$
-  \\item Umbral fijo adicional: $b = {threshold}$
   \\item Pesos iniciales: {escape_latex(str(initial_weights) if initial_weights else "Inicialización aleatoria")}
   \\item Máximo de épocas: {max_epochs}
 \\end{{itemize}}
