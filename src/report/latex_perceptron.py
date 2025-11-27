@@ -182,9 +182,11 @@ o(x_1, x_2, \\ldots, x_n) =
 \\subsection*{{2. Regla de aprendizaje}}
 
 \\[
-\\Delta w_i = \\eta (t - o)x_i
-\\qquad
-w_i \\leftarrow w_i + \\Delta w_i
+w_i = w_i + \\Delta w_i \dots (1)
+\\]
+
+\\[
+\\Delta w_i = \\eta (t - o)x_i \dots (2)
 \\]
 
 Donde:
